@@ -14,22 +14,22 @@ import {
 
 type ReadingMode = 'page' | 'sentence';
 
-// Color mapping for word states in page mode - subtle underlines
+// Color mapping for word states in page mode - background highlights
 const stateColors: Record<WordState, string> = {
-  new: 'border-bottom: 2px solid #93c5fd;', // soft blue underline
-  level1: 'border-bottom: 2px solid #fcd34d;', // yellow underline
-  level2: 'border-bottom: 1px solid #fcd34d;', // thinner yellow
-  level3: 'border-bottom: 1px dashed #d4d4d8;', // dashed gray
+  new: 'background-color: #dbeafe; border-radius: 2px;', // blue-100
+  level1: 'background-color: #fef08a; border-radius: 2px;', // yellow-200
+  level2: 'background-color: #fef9c3; border-radius: 2px;', // yellow-100
+  level3: 'background-color: #fefce8; border-radius: 2px;', // yellow-50
   level4: '', // almost known, no highlight
   known: '',
   ignored: 'opacity: 0.5;',
 };
 
 const darkStateColors: Record<WordState, string> = {
-  new: 'border-bottom: 2px solid #3b82f6;', // blue underline
-  level1: 'border-bottom: 2px solid #ca8a04;', // yellow underline
-  level2: 'border-bottom: 1px solid #ca8a04;', // thinner yellow
-  level3: 'border-bottom: 1px dashed #52525b;', // dashed gray
+  new: 'background-color: rgba(59, 130, 246, 0.3); border-radius: 2px;', // blue with opacity
+  level1: 'background-color: rgba(202, 138, 4, 0.4); border-radius: 2px;', // yellow-600 with opacity
+  level2: 'background-color: rgba(202, 138, 4, 0.25); border-radius: 2px;', // lighter yellow
+  level3: 'background-color: rgba(202, 138, 4, 0.15); border-radius: 2px;', // very light yellow
   level4: '', // almost known, no highlight
   known: '',
   ignored: 'opacity: 0.4;',

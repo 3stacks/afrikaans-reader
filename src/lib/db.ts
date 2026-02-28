@@ -137,11 +137,45 @@ export const db = new AfrikaansLearningDB();
 // ============================================================================
 
 export async function getBook(id: string): Promise<Book | undefined> {
-  return db.books.get(id);
+  const book = await db.books.get(id);
+  if (!book) return undefined;
+
+  // Migration: handle old books with epubData field
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const oldBook = book as any;
+  if (oldBook.epubData && !book.fileData) {
+    book.fileData = oldBook.epubData;
+    book.fileType = 'epub';
+    // Save migration
+    await db.books.put(book);
+  }
+
+  // Ensure fileType defaults to epub for old entries
+  if (!book.fileType) {
+    book.fileType = 'epub';
+  }
+
+  return book;
 }
 
 export async function getAllBooks(): Promise<Book[]> {
-  return db.books.orderBy('lastReadAt').reverse().toArray();
+  const books = await db.books.orderBy('lastReadAt').reverse().toArray();
+
+  // Migration: handle old books with epubData field
+  for (const book of books) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const oldBook = book as any;
+    if (oldBook.epubData && !book.fileData) {
+      book.fileData = oldBook.epubData;
+      book.fileType = 'epub';
+      await db.books.put(book);
+    }
+    if (!book.fileType) {
+      book.fileType = 'epub';
+    }
+  }
+
+  return books;
 }
 
 export async function saveBook(book: Book): Promise<string> {

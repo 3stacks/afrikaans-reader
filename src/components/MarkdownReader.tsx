@@ -10,22 +10,22 @@ import {
   getReadingPosition,
 } from '@/lib/db';
 
-// Color mapping for word states - subtle underlines
+// Color mapping for word states - background highlights
 const stateColors: Record<WordState, string> = {
-  new: 'border-b-2 border-blue-300',
-  level1: 'border-b-2 border-yellow-400',
-  level2: 'border-b border-yellow-400',
-  level3: 'border-b border-dashed border-zinc-300',
+  new: 'bg-blue-100',
+  level1: 'bg-yellow-200',
+  level2: 'bg-yellow-100',
+  level3: 'bg-yellow-50',
   level4: '',
   known: '',
   ignored: 'opacity-50',
 };
 
 const darkStateColors: Record<WordState, string> = {
-  new: 'border-b-2 border-blue-500',
-  level1: 'border-b-2 border-yellow-600',
-  level2: 'border-b border-yellow-600',
-  level3: 'border-b border-dashed border-zinc-600',
+  new: 'bg-blue-900/40',
+  level1: 'bg-yellow-700/50',
+  level2: 'bg-yellow-800/30',
+  level3: 'bg-yellow-900/20',
   level4: '',
   known: '',
   ignored: 'opacity-40',

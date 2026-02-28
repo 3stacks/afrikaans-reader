@@ -161,7 +161,42 @@ export default function SettingsPage() {
     return key.slice(0, 4) + "*".repeat(key.length - 8) + key.slice(-4);
   };
 
-  // Handle CSV file upload for known words
+  // Parse CSV line handling quoted fields
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  // Map LingQ status to our word state
+  const lingqStatusToState = (status: string): WordState => {
+    switch (status) {
+      case '1': return 'level1';
+      case '2': return 'level2';
+      case '3': return 'level3';
+      case '4': return 'level4';
+      case 'K':
+      case 'k':
+      case '5': return 'known';
+      default: return 'level1';
+    }
+  };
+
+  // Handle CSV file upload for known words (supports LingQ format)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -173,14 +208,61 @@ export default function SettingsPage() {
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
 
-      // Parse CSV - assume first column is the word
-      const words = lines.map((line) => {
-        const parts = line.split(",");
-        return parts[0].trim().toLowerCase();
-      });
+      if (lines.length === 0) {
+        setImportStatus("No data found in file.");
+        return;
+      }
 
-      await importKnownWords(words);
-      setImportStatus(`Successfully imported ${words.length} words as known.`);
+      // Check if this looks like a LingQ export (has header row)
+      const firstLine = lines[0].toLowerCase();
+      const isLingQFormat = firstLine.includes('term') || firstLine.includes('hint') || firstLine.includes('status');
+
+      if (isLingQFormat) {
+        // LingQ CSV format: term, hint (translation), status, etc.
+        const header = parseCSVLine(lines[0].toLowerCase());
+        const termIdx = header.findIndex(h => h === 'term' || h === 'word');
+        const hintIdx = header.findIndex(h => h === 'hint' || h === 'translation');
+        const statusIdx = header.findIndex(h => h === 'status');
+
+        if (termIdx === -1) {
+          setImportStatus("Could not find 'term' column in LingQ export.");
+          return;
+        }
+
+        const imports: { word: string; state: WordState; translation?: string }[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const fields = parseCSVLine(lines[i]);
+          const word = fields[termIdx]?.toLowerCase().trim();
+          if (!word) continue;
+
+          const status = statusIdx >= 0 ? fields[statusIdx] : 'K';
+          const translation = hintIdx >= 0 ? fields[hintIdx] : undefined;
+
+          imports.push({
+            word,
+            state: lingqStatusToState(status),
+            translation,
+          });
+        }
+
+        // Import with states and translations
+        await importLingQWords(imports);
+        const knownCount = imports.filter(i => i.state === 'known').length;
+        const learningCount = imports.length - knownCount;
+        setImportStatus(
+          `Imported ${imports.length} words from LingQ: ${knownCount} known, ${learningCount} learning.`
+        );
+      } else {
+        // Simple format: one word per line or first CSV column
+        const words = lines.map((line) => {
+          const parts = line.split(",");
+          return parts[0].trim().toLowerCase();
+        }).filter(w => w.length > 0);
+
+        await importKnownWords(words);
+        setImportStatus(`Successfully imported ${words.length} words as known.`);
+      }
     } catch (error) {
       setImportStatus(`Error importing file: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
@@ -189,6 +271,47 @@ export default function SettingsPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  // Import LingQ words with their states and translations
+  const importLingQWords = async (
+    imports: { word: string; state: WordState; translation?: string }[]
+  ) => {
+    for (const item of imports) {
+      // Check if word already exists
+      const existing = await db.vocab.where('text').equals(item.word).first();
+
+      if (existing) {
+        // Update state if the LingQ state is "more known"
+        const stateRank: Record<WordState, number> = {
+          'new': 0, 'level1': 1, 'level2': 2, 'level3': 3, 'level4': 4, 'known': 5, 'ignored': -1
+        };
+        if (stateRank[item.state] > stateRank[existing.state]) {
+          await db.vocab.update(existing.id, {
+            state: item.state,
+            stateUpdatedAt: new Date(),
+          });
+        }
+      } else {
+        // Create new entry
+        await db.vocab.add({
+          id: crypto.randomUUID(),
+          text: item.word,
+          type: 'word',
+          sentence: '',
+          translation: item.translation || '',
+          state: item.state,
+          stateUpdatedAt: new Date(),
+          reviewCount: 0,
+          createdAt: new Date(),
+          pushedToAnki: false,
+        });
+      }
+    }
+
+    // Also update known words table for fast lookup
+    const updates = imports.map(i => ({ word: i.word, state: i.state }));
+    await bulkUpdateWordStates(updates);
   };
 
   // Handle paste text area import
@@ -658,8 +781,10 @@ export default function SettingsPage() {
               Import Known Words
             </h2>
             <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-              Import words you already know to skip them when reading. Upload a
-              CSV file or paste words below.
+              Import words you already know. Supports <strong>LingQ exports</strong> (with status levels and translations) or simple word lists.
+            </p>
+            <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-500">
+              LingQ: Vocabulary → Settings gear → Export LingQs → Upload the CSV here
             </p>
 
             {/* CSV Upload */}

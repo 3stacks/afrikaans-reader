@@ -11,15 +11,15 @@ interface SentenceModeReaderProps {
   getWordState: (word: string) => WordState | undefined;
 }
 
-// Color mapping for word states
+// Color mapping for word states - background highlights
 const stateColors: Record<WordState, string> = {
-  new: 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100',
-  level1: 'bg-yellow-200 dark:bg-yellow-700 text-yellow-900 dark:text-yellow-100',
-  level2: 'bg-yellow-100 dark:bg-yellow-800/70 text-yellow-800 dark:text-yellow-200',
-  level3: 'bg-yellow-50 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300',
-  level4: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300',
+  new: 'bg-blue-100 dark:bg-blue-900/40',
+  level1: 'bg-yellow-200 dark:bg-yellow-700/50',
+  level2: 'bg-yellow-100 dark:bg-yellow-800/30',
+  level3: 'bg-yellow-50 dark:bg-yellow-900/20',
+  level4: '',
   known: '',
-  ignored: 'text-zinc-400 dark:text-zinc-500',
+  ignored: 'opacity-50',
 };
 
 export default function SentenceModeReader({
