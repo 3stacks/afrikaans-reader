@@ -1,0 +1,789 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { getDeckNames, isAnkiConnected } from "@/lib/anki";
+import {
+  db,
+  exportAllData,
+  clearAllData,
+  bulkUpdateWordStates,
+  type VocabEntry,
+  type KnownWord,
+  type WordState,
+} from "@/lib/db";
+
+// Settings keys for localStorage
+const SETTINGS_KEYS = {
+  ANTHROPIC_API_KEY: "afrikaans-reader-api-key",
+  ANKI_DECK_NAME: "afrikaans-reader-anki-deck",
+  DEFAULT_CARD_TYPE: "afrikaans-reader-card-type",
+  TTS_SPEED: "afrikaans-reader-tts-speed",
+  THEME: "afrikaans-reader-theme",
+} as const;
+
+type CardType = "basic" | "cloze";
+type Theme = "light" | "dark" | "system";
+
+interface AppSettings {
+  apiKey: string;
+  ankiDeckName: string;
+  defaultCardType: CardType;
+  ttsSpeed: number;
+  theme: Theme;
+}
+
+const defaultSettings: AppSettings = {
+  apiKey: "",
+  ankiDeckName: "Afrikaans",
+  defaultCardType: "basic",
+  ttsSpeed: 1.0,
+  theme: "system",
+};
+
+export default function SettingsPage() {
+  // Settings state
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  // Anki state
+  const [ankiConnected, setAnkiConnected] = useState(false);
+  const [ankiDecks, setAnkiDecks] = useState<string[]>([]);
+  const [ankiLoading, setAnkiLoading] = useState(false);
+  const [ankiError, setAnkiError] = useState<string | null>(null);
+
+  // Import state
+  const [importText, setImportText] = useState("");
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Data management state
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearConfirmText, setCllearConfirmText] = useState("");
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const loadedSettings: AppSettings = {
+      apiKey: localStorage.getItem(SETTINGS_KEYS.ANTHROPIC_API_KEY) || "",
+      ankiDeckName:
+        localStorage.getItem(SETTINGS_KEYS.ANKI_DECK_NAME) || "Afrikaans",
+      defaultCardType:
+        (localStorage.getItem(SETTINGS_KEYS.DEFAULT_CARD_TYPE) as CardType) ||
+        "basic",
+      ttsSpeed: parseFloat(
+        localStorage.getItem(SETTINGS_KEYS.TTS_SPEED) || "1.0"
+      ),
+      theme: (localStorage.getItem(SETTINGS_KEYS.THEME) as Theme) || "system",
+    };
+    setSettings(loadedSettings);
+
+    // Apply theme on load
+    applyTheme(loadedSettings.theme);
+  }, []);
+
+  // Check Anki connection
+  const checkAnkiConnection = useCallback(async () => {
+    setAnkiLoading(true);
+    setAnkiError(null);
+    try {
+      const connected = await isAnkiConnected();
+      setAnkiConnected(connected);
+      if (connected) {
+        const decks = await getDeckNames();
+        setAnkiDecks(decks);
+      }
+    } catch {
+      setAnkiError("Failed to connect to Anki. Make sure Anki is running with AnkiConnect installed.");
+      setAnkiConnected(false);
+    } finally {
+      setAnkiLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAnkiConnection();
+  }, [checkAnkiConnection]);
+
+  // Apply theme to document
+  const applyTheme = (theme: Theme) => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else if (theme === "light") {
+      root.classList.remove("dark");
+    } else {
+      // System preference
+      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        root.classList.add("dark");
+      } else {
+        root.classList.remove("dark");
+      }
+    }
+  };
+
+  // Save individual setting
+  const saveSetting = <K extends keyof AppSettings>(
+    key: K,
+    value: AppSettings[K]
+  ) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+
+    // Map to localStorage key
+    const storageKeyMap: Record<keyof AppSettings, string> = {
+      apiKey: SETTINGS_KEYS.ANTHROPIC_API_KEY,
+      ankiDeckName: SETTINGS_KEYS.ANKI_DECK_NAME,
+      defaultCardType: SETTINGS_KEYS.DEFAULT_CARD_TYPE,
+      ttsSpeed: SETTINGS_KEYS.TTS_SPEED,
+      theme: SETTINGS_KEYS.THEME,
+    };
+
+    localStorage.setItem(storageKeyMap[key], String(value));
+
+    // Apply theme immediately if changed
+    if (key === "theme") {
+      applyTheme(value as Theme);
+    }
+  };
+
+  // Mask API key for display
+  const getMaskedApiKey = (key: string): string => {
+    if (!key) return "";
+    if (key.length <= 8) return "*".repeat(key.length);
+    return key.slice(0, 4) + "*".repeat(key.length - 8) + key.slice(-4);
+  };
+
+  // Handle CSV file upload for known words
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const lines = text
+        .split(/[\r\n]+/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      // Parse CSV - assume first column is the word
+      const words = lines.map((line) => {
+        const parts = line.split(",");
+        return parts[0].trim().toLowerCase();
+      });
+
+      await importKnownWords(words);
+      setImportStatus(`Successfully imported ${words.length} words as known.`);
+    } catch (error) {
+      setImportStatus(`Error importing file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Handle paste text area import
+  const handleTextImport = async () => {
+    const words = importText
+      .split(/[\r\n]+/)
+      .map((word) => word.trim().toLowerCase())
+      .filter((word) => word.length > 0);
+
+    if (words.length === 0) {
+      setImportStatus("No words to import.");
+      return;
+    }
+
+    await importKnownWords(words);
+    setImportStatus(`Successfully imported ${words.length} words as known.`);
+    setImportText("");
+  };
+
+  // Import words as known
+  const importKnownWords = async (words: string[]) => {
+    const updates = words.map((word) => ({
+      word,
+      state: "known" as WordState,
+    }));
+    await bulkUpdateWordStates(updates);
+  };
+
+  // Export vocab as CSV
+  const exportVocabCSV = async () => {
+    try {
+      const vocab = await db.vocab.toArray();
+      const csv = [
+        "text,type,sentence,translation,state,createdAt",
+        ...vocab.map(
+          (v) =>
+            `"${v.text}","${v.type}","${v.sentence.replace(/"/g, '""')}","${v.translation.replace(/"/g, '""')}","${v.state}","${v.createdAt.toISOString()}"`
+        ),
+      ].join("\n");
+
+      downloadFile(csv, "afrikaans-vocab.csv", "text/csv");
+      setExportStatus("Vocab exported as CSV.");
+    } catch (error) {
+      setExportStatus(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Export vocab as JSON
+  const exportVocabJSON = async () => {
+    try {
+      const vocab = await db.vocab.toArray();
+      const json = JSON.stringify(vocab, null, 2);
+      downloadFile(json, "afrikaans-vocab.json", "application/json");
+      setExportStatus("Vocab exported as JSON.");
+    } catch (error) {
+      setExportStatus(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Export all known words
+  const exportKnownWords = async () => {
+    try {
+      const knownWords = await db.knownWords.toArray();
+      const words = knownWords
+        .filter((w) => w.state === "known")
+        .map((w) => w.word);
+      const text = words.join("\n");
+      downloadFile(text, "afrikaans-known-words.txt", "text/plain");
+      setExportStatus(`Exported ${words.length} known words.`);
+    } catch (error) {
+      setExportStatus(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Export full backup
+  const exportFullBackup = async () => {
+    try {
+      const data = await exportAllData();
+      // Convert ArrayBuffer to base64 for books
+      const exportData = {
+        ...data,
+        books: await Promise.all(
+          data.books.map(async (book) => ({
+            ...book,
+            epubData: arrayBufferToBase64(book.epubData),
+          }))
+        ),
+        exportedAt: new Date().toISOString(),
+        version: 1,
+      };
+      const json = JSON.stringify(exportData, null, 2);
+      downloadFile(json, "afrikaans-reader-backup.json", "application/json");
+      setExportStatus("Full backup exported.");
+    } catch (error) {
+      setExportStatus(`Backup failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Import backup
+  const handleBackupImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      // Validate backup format
+      if (!data.version || !data.exportedAt) {
+        throw new Error("Invalid backup file format");
+      }
+
+      // Import books (convert base64 back to ArrayBuffer)
+      if (data.books && Array.isArray(data.books)) {
+        for (const book of data.books) {
+          const epubData = base64ToArrayBuffer(book.epubData);
+          await db.books.put({
+            ...book,
+            epubData,
+            createdAt: new Date(book.createdAt),
+            lastReadAt: new Date(book.lastReadAt),
+          });
+        }
+      }
+
+      // Import vocab
+      if (data.vocab && Array.isArray(data.vocab)) {
+        for (const v of data.vocab as VocabEntry[]) {
+          await db.vocab.put({
+            ...v,
+            stateUpdatedAt: new Date(v.stateUpdatedAt),
+            createdAt: new Date(v.createdAt),
+          });
+        }
+      }
+
+      // Import known words
+      if (data.knownWords && Array.isArray(data.knownWords)) {
+        await db.knownWords.bulkPut(data.knownWords as KnownWord[]);
+      }
+
+      // Import cloze sentences
+      if (data.clozeSentences && Array.isArray(data.clozeSentences)) {
+        for (const s of data.clozeSentences) {
+          await db.clozeSentences.put({
+            ...s,
+            nextReview: new Date(s.nextReview),
+            lastReviewed: s.lastReviewed ? new Date(s.lastReviewed) : undefined,
+          });
+        }
+      }
+
+      // Import daily stats
+      if (data.dailyStats && Array.isArray(data.dailyStats)) {
+        await db.dailyStats.bulkPut(data.dailyStats);
+      }
+
+      // Import settings
+      if (data.settings && Array.isArray(data.settings)) {
+        await db.settings.bulkPut(data.settings);
+      }
+
+      setExportStatus("Backup imported successfully!");
+    } catch (error) {
+      setExportStatus(`Import failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+
+    // Reset file input
+    e.target.value = "";
+  };
+
+  // Clear all data
+  const handleClearAllData = async () => {
+    if (clearConfirmText !== "DELETE ALL DATA") {
+      setExportStatus("Please type 'DELETE ALL DATA' to confirm.");
+      return;
+    }
+
+    try {
+      await clearAllData();
+      // Also clear localStorage settings
+      Object.values(SETTINGS_KEYS).forEach((key) => {
+        localStorage.removeItem(key);
+      });
+      setSettings(defaultSettings);
+      setShowClearConfirm(false);
+      setCllearConfirmText("");
+      setExportStatus("All data has been cleared.");
+    } catch (error) {
+      setExportStatus(`Clear failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Helper to download a file
+  const downloadFile = (
+    content: string,
+    filename: string,
+    mimeType: string
+  ) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Helper to convert ArrayBuffer to base64
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  // Helper to convert base64 to ArrayBuffer
+  const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  };
+
+  return (
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      {/* Header */}
+      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-900/80">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
+          <Link
+            href="/"
+            className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            &larr; Back
+          </Link>
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+            Settings
+          </h1>
+          <div className="w-12" /> {/* Spacer for centering */}
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        <div className="space-y-8">
+          {/* API Key Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Anthropic API Key
+            </h2>
+            <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+              Required for AI-powered translations. Get your API key from{" "}
+              <a
+                href="https://console.anthropic.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline dark:text-blue-400"
+              >
+                console.anthropic.com
+              </a>
+            </p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={showApiKey ? settings.apiKey : getMaskedApiKey(settings.apiKey)}
+                  onChange={(e) => saveSetting("apiKey", e.target.value)}
+                  placeholder="sk-ant-..."
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                  readOnly={!showApiKey}
+                />
+              </div>
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                {showApiKey ? "Hide" : "Show"}
+              </button>
+            </div>
+          </section>
+
+          {/* Anki Settings Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Anki Integration
+              </h2>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${
+                    ankiConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                />
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                  {ankiConnected ? "Connected" : "Not connected"}
+                </span>
+                <button
+                  onClick={checkAnkiConnection}
+                  disabled={ankiLoading}
+                  className="ml-2 text-sm text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
+                >
+                  {ankiLoading ? "Checking..." : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {ankiError && (
+              <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
+                {ankiError}
+              </div>
+            )}
+
+            {/* Deck Selector */}
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Default Deck
+              </label>
+              {ankiConnected && ankiDecks.length > 0 ? (
+                <select
+                  value={settings.ankiDeckName}
+                  onChange={(e) => saveSetting("ankiDeckName", e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {ankiDecks.map((deck) => (
+                    <option key={deck} value={deck}>
+                      {deck}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={settings.ankiDeckName}
+                  onChange={(e) => saveSetting("ankiDeckName", e.target.value)}
+                  placeholder="Deck name"
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                />
+              )}
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                {ankiConnected
+                  ? "Select from your existing decks"
+                  : "Connect to Anki to see available decks, or enter a deck name manually"}
+              </p>
+            </div>
+
+            {/* Card Type Toggle */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Default Card Type
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveSetting("defaultCardType", "basic")}
+                  className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    settings.defaultCardType === "basic"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  Basic
+                </button>
+                <button
+                  onClick={() => saveSetting("defaultCardType", "cloze")}
+                  className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    settings.defaultCardType === "cloze"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  Cloze
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                Basic shows front/back, Cloze creates fill-in-the-blank cards
+              </p>
+            </div>
+          </section>
+
+          {/* TTS Settings Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Text-to-Speech
+            </h2>
+            <div>
+              <label className="mb-2 flex items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <span>Speech Speed</span>
+                <span className="font-mono text-zinc-500">
+                  {settings.ttsSpeed.toFixed(1)}x
+                </span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={settings.ttsSpeed}
+                onChange={(e) =>
+                  saveSetting("ttsSpeed", parseFloat(e.target.value))
+                }
+                className="w-full accent-blue-500"
+              />
+              <div className="mt-1 flex justify-between text-xs text-zinc-500">
+                <span>0.5x (Slow)</span>
+                <span>1.0x</span>
+                <span>2.0x (Fast)</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Theme Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Appearance
+            </h2>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Theme
+              </label>
+              <div className="flex gap-2">
+                {(["light", "dark", "system"] as Theme[]).map((theme) => (
+                  <button
+                    key={theme}
+                    onClick={() => saveSetting("theme", theme)}
+                    className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium capitalize transition-colors ${
+                      settings.theme === theme
+                        ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                        : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    {theme}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Known Words Import Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Import Known Words
+            </h2>
+            <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+              Import words you already know to skip them when reading. Upload a
+              CSV file or paste words below.
+            </p>
+
+            {/* CSV Upload */}
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Upload CSV File
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt"
+                onChange={handleFileUpload}
+                className="block w-full text-sm text-zinc-600 file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100 dark:text-zinc-400 dark:file:bg-blue-900/20 dark:file:text-blue-400"
+              />
+              <p className="mt-1 text-xs text-zinc-500">
+                CSV with words in the first column, or a plain text file
+              </p>
+            </div>
+
+            {/* Text Area Import */}
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Or Paste Words (one per line)
+              </label>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="die&#10;en&#10;is&#10;van&#10;..."
+                rows={6}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              />
+            </div>
+
+            <button
+              onClick={handleTextImport}
+              disabled={!importText.trim()}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Import
+            </button>
+
+            {importStatus && (
+              <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+                {importStatus}
+              </p>
+            )}
+          </section>
+
+          {/* Export Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Export Data
+            </h2>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={exportVocabCSV}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Export Vocab (CSV)
+              </button>
+              <button
+                onClick={exportVocabJSON}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Export Vocab (JSON)
+              </button>
+              <button
+                onClick={exportKnownWords}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Export Known Words
+              </button>
+            </div>
+            {exportStatus && (
+              <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+                {exportStatus}
+              </p>
+            )}
+          </section>
+
+          {/* Data Management Section */}
+          <section className="rounded-lg border border-red-200 bg-white p-6 dark:border-red-900/50 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Data Management
+            </h2>
+
+            <div className="mb-6 flex flex-wrap gap-3">
+              <button
+                onClick={exportFullBackup}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Export Full Backup
+              </button>
+              <label className="cursor-pointer rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700">
+                Import Backup
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleBackupImport}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {/* Clear All Data */}
+            <div className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <h3 className="mb-2 text-sm font-medium text-red-600 dark:text-red-400">
+                Danger Zone
+              </h3>
+              {!showClearConfirm ? (
+                <button
+                  onClick={() => setShowClearConfirm(true)}
+                  className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:bg-zinc-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  Clear All Data
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    This will permanently delete all your books, vocabulary,
+                    progress, and settings. Type{" "}
+                    <span className="font-mono font-bold">DELETE ALL DATA</span>{" "}
+                    to confirm.
+                  </p>
+                  <input
+                    type="text"
+                    value={clearConfirmText}
+                    onChange={(e) => setCllearConfirmText(e.target.value)}
+                    placeholder="DELETE ALL DATA"
+                    className="w-full rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 dark:border-red-800 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleClearAllData}
+                      className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                    >
+                      Confirm Delete
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowClearConfirm(false);
+                        setCllearConfirmText("");
+                      }}
+                      className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,547 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import NavHeader from '@/components/NavHeader';
+import ClozeInput, { ClozeInputHandle } from '@/components/ClozeInput';
+import ClozeFeedback from '@/components/ClozeFeedback';
+import {
+  db,
+  ClozeSentence,
+  ClozeMasteryLevel,
+  getClozeSentencesDueForReview,
+  saveClozeSentence,
+  updateClozeAfterReview,
+  getTodayStats,
+  incrementDailyStat,
+} from '@/lib/db';
+import { fetchAfrikaansSentences, TatoebaSentence } from '@/lib/tatoeba';
+import { speak, isTTSAvailable } from '@/lib/tts';
+import { addClozeCard, isAnkiConnected } from '@/lib/anki';
+
+// Constants
+const DAILY_GOAL = 50;
+const ANKI_DECK_NAME = 'Afrikaans::Cloze';
+
+// Helper function to select a word to blank from a sentence
+function selectWordToBlank(sentence: string): { word: string; index: number } {
+  const words = sentence.split(/\s+/);
+
+  // Common words to avoid blanking (articles, prepositions, etc.)
+  const avoidWords = new Set([
+    "'n", "die", "en", "of", "in", "op", "vir", "met", "na", "van",
+    "is", "het", "om", "te", "dat", "wat", "as", "aan", "by", "sy", "hy",
+  ]);
+
+  // Find content words (not in avoid list, length > 2)
+  const contentWordIndices: number[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const cleanWord = words[i].replace(/[.,!?;:'"]/g, '').toLowerCase();
+    if (cleanWord.length > 2 && !avoidWords.has(cleanWord)) {
+      contentWordIndices.push(i);
+    }
+  }
+
+  // Select random content word, or any word if no content words found
+  const candidateIndices = contentWordIndices.length > 0
+    ? contentWordIndices
+    : words.map((_, i) => i).filter((i) => words[i].length > 1);
+
+  const index = candidateIndices.length > 0
+    ? candidateIndices[Math.floor(Math.random() * candidateIndices.length)]
+    : 0;
+
+  return { word: words[index], index };
+}
+
+// Helper function to create blanked sentence
+function createBlankedSentence(sentence: string, wordIndex: number): string {
+  const words = sentence.split(/\s+/);
+  words[wordIndex] = '_____';
+  return words.join(' ');
+}
+
+// Helper function to check answer (case-insensitive, ignores punctuation)
+function checkAnswer(userAnswer: string, correctWord: string): boolean {
+  const normalize = (s: string) => s.toLowerCase().replace(/[.,!?;:'"]/g, '').trim();
+  return normalize(userAnswer) === normalize(correctWord);
+}
+
+// Calculate next review date based on mastery level
+function calculateNextReview(mastery: ClozeMasteryLevel): Date {
+  const now = new Date();
+  const intervals: Record<ClozeMasteryLevel, number> = {
+    0: 0,     // Review immediately (same session)
+    25: 1,    // 1 day
+    50: 3,    // 3 days
+    75: 7,    // 1 week
+    100: 14,  // 2 weeks
+  };
+  const days = intervals[mastery];
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+// Calculate points for correct answer
+function calculatePoints(mastery: ClozeMasteryLevel): number {
+  const pointsMap: Record<ClozeMasteryLevel, number> = {
+    0: 10,
+    25: 15,
+    50: 20,
+    75: 25,
+    100: 30,
+  };
+  return pointsMap[mastery];
+}
+
+type PracticeState = 'loading' | 'practicing' | 'feedback' | 'complete';
+
+interface CurrentSentence {
+  sentence: ClozeSentence;
+  blankedSentence: string;
+}
+
+export default function PracticePage() {
+  // State
+  const [state, setState] = useState<PracticeState>('loading');
+  const [queue, setQueue] = useState<ClozeSentence[]>([]);
+  const [current, setCurrent] = useState<CurrentSentence | null>(null);
+  const [userAnswer, setUserAnswer] = useState('');
+  const [todayCount, setTodayCount] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [ttsSupported, setTtsSupported] = useState(false);
+  const [ankiConnected, setAnkiConnected] = useState(false);
+
+  // Feedback state
+  const [feedbackData, setFeedbackData] = useState<{
+    isCorrect: boolean;
+    correctWord: string;
+    userAnswer: string;
+    translation: string;
+    points: number;
+    newMastery: ClozeMasteryLevel;
+    previousMastery: ClozeMasteryLevel;
+  } | null>(null);
+  const [isAddingToAnki, setIsAddingToAnki] = useState(false);
+  const [ankiAdded, setAnkiAdded] = useState(false);
+
+  const inputRef = useRef<ClozeInputHandle>(null);
+
+  // Initialize - load due sentences and today's stats
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        // Check TTS support
+        setTtsSupported(isTTSAvailable());
+
+        // Check Anki connection
+        const connected = await isAnkiConnected();
+        setAnkiConnected(connected);
+
+        // Get today's stats
+        const stats = await getTodayStats();
+        setTodayCount(stats.clozePracticed);
+        setPoints(stats.points);
+
+        // Load due sentences from IndexedDB
+        const dueSentences = await getClozeSentencesDueForReview(DAILY_GOAL);
+
+        if (dueSentences.length > 0) {
+          setQueue(dueSentences);
+          loadNextSentence(dueSentences);
+        } else {
+          // No due sentences, fetch new ones from Tatoeba
+          await fetchNewSentences();
+        }
+      } catch (error) {
+        console.error('Failed to initialize practice:', error);
+        setState('complete');
+      }
+    };
+
+    initialize();
+  }, []);
+
+  // Fetch new sentences from Tatoeba
+  const fetchNewSentences = async () => {
+    try {
+      const tatoebaSentences = await fetchAfrikaansSentences(20);
+      const validSentences = tatoebaSentences.filter(
+        (s): s is TatoebaSentence & { translation: NonNullable<TatoebaSentence['translation']> } =>
+          s.translation !== undefined && s.text.split(/\s+/).length >= 3
+      );
+
+      if (validSentences.length === 0) {
+        setState('complete');
+        return;
+      }
+
+      // Convert to ClozeSentence and save to DB
+      const newSentences: ClozeSentence[] = [];
+      for (const s of validSentences) {
+        const { word, index } = selectWordToBlank(s.text);
+
+        // Check if this sentence already exists
+        const existing = await db.clozeSentences
+          .where('tatoebaSentenceId')
+          .equals(s.id)
+          .first();
+
+        if (!existing) {
+          const clozeSentence: ClozeSentence = {
+            id: uuidv4(),
+            sentence: s.text,
+            clozeWord: word,
+            clozeIndex: index,
+            translation: s.translation.text,
+            source: 'tatoeba',
+            tatoebaSentenceId: s.id,
+            masteryLevel: 0,
+            nextReview: new Date(),
+            reviewCount: 0,
+            timesCorrect: 0,
+            timesIncorrect: 0,
+          };
+
+          await saveClozeSentence(clozeSentence);
+          newSentences.push(clozeSentence);
+        }
+      }
+
+      if (newSentences.length > 0) {
+        setQueue(newSentences);
+        loadNextSentence(newSentences);
+      } else {
+        // All sentences were duplicates, try to get due ones again
+        const dueSentences = await getClozeSentencesDueForReview(DAILY_GOAL);
+        if (dueSentences.length > 0) {
+          setQueue(dueSentences);
+          loadNextSentence(dueSentences);
+        } else {
+          setState('complete');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch sentences:', error);
+      setState('complete');
+    }
+  };
+
+  // Load next sentence from queue
+  const loadNextSentence = useCallback((sentenceQueue: ClozeSentence[]) => {
+    if (sentenceQueue.length === 0) {
+      setState('complete');
+      return;
+    }
+
+    const nextSentence = sentenceQueue[0];
+    const blankedSentence = createBlankedSentence(nextSentence.sentence, nextSentence.clozeIndex);
+
+    setCurrent({ sentence: nextSentence, blankedSentence });
+    setUserAnswer('');
+    setFeedbackData(null);
+    setAnkiAdded(false);
+    setState('practicing');
+
+    // Focus input after state update
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  // Handle answer submission
+  const handleSubmit = async () => {
+    if (!current || !userAnswer.trim()) return;
+
+    const isCorrect = checkAnswer(userAnswer.trim(), current.sentence.clozeWord);
+    const previousMastery = current.sentence.masteryLevel;
+
+    let newMastery: ClozeMasteryLevel;
+    if (isCorrect) {
+      newMastery = Math.min(previousMastery + 25, 100) as ClozeMasteryLevel;
+    } else {
+      newMastery = 0;
+    }
+
+    const earnedPoints = isCorrect ? calculatePoints(previousMastery) : 0;
+    const nextReview = calculateNextReview(newMastery);
+
+    // Update database
+    await updateClozeAfterReview(current.sentence.id, isCorrect, newMastery, nextReview);
+    await incrementDailyStat('clozePracticed');
+    if (earnedPoints > 0) {
+      await incrementDailyStat('points', earnedPoints);
+    }
+
+    // Update local state
+    setTodayCount((prev) => prev + 1);
+    if (earnedPoints > 0) {
+      setPoints((prev) => prev + earnedPoints);
+    }
+
+    // Set feedback data
+    setFeedbackData({
+      isCorrect,
+      correctWord: current.sentence.clozeWord,
+      userAnswer: userAnswer.trim(),
+      translation: current.sentence.translation,
+      points: earnedPoints,
+      newMastery,
+      previousMastery,
+    });
+
+    setState('feedback');
+  };
+
+  // Handle next sentence
+  const handleNext = async () => {
+    const remainingQueue = queue.slice(1);
+    setQueue(remainingQueue);
+
+    if (remainingQueue.length > 0) {
+      loadNextSentence(remainingQueue);
+    } else if (todayCount < DAILY_GOAL) {
+      // Try to fetch more sentences
+      setState('loading');
+      await fetchNewSentences();
+    } else {
+      setState('complete');
+    }
+  };
+
+  // Handle add to Anki
+  const handleAddToAnki = async () => {
+    if (!current || !feedbackData || !feedbackData.isCorrect || isAddingToAnki || ankiAdded) return;
+
+    setIsAddingToAnki(true);
+    try {
+      await addClozeCard(
+        ANKI_DECK_NAME,
+        current.sentence.sentence,
+        current.sentence.clozeWord,
+        current.sentence.translation,
+        current.sentence.clozeWord // Word meaning could be enhanced with translation
+      );
+      setAnkiAdded(true);
+    } catch (error) {
+      console.error('Failed to add to Anki:', error);
+      // Could add toast notification here
+    } finally {
+      setIsAddingToAnki(false);
+    }
+  };
+
+  // Handle TTS
+  const handleSpeak = () => {
+    if (!current) return;
+    speak(current.sentence.sentence);
+  };
+
+  // Progress percentage
+  const progressPercent = Math.min((todayCount / DAILY_GOAL) * 100, 100);
+
+  return (
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      <NavHeader />
+
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* Header with progress */}
+        <div className="mb-8">
+          <div className="mb-2 flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Cloze Practice</h1>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="flex items-center gap-1.5 font-medium text-amber-600 dark:text-amber-400">
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                {points.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="mb-2">
+            <div className="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
+              <span>Daily Progress</span>
+              <span className="font-medium">{todayCount}/{DAILY_GOAL} sentences</span>
+            </div>
+            <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+
+          {todayCount >= DAILY_GOAL && (
+            <p className="mt-2 text-sm font-medium text-green-600 dark:text-green-400">
+              Daily goal reached! Keep going for bonus practice.
+            </p>
+          )}
+        </div>
+
+        {/* Main content area */}
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          {/* Loading state */}
+          {state === 'loading' && (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-blue-500 dark:border-zinc-700 dark:border-t-blue-400" />
+              <p className="text-zinc-500 dark:text-zinc-400">Loading sentences...</p>
+            </div>
+          )}
+
+          {/* Practice state */}
+          {state === 'practicing' && current && (
+            <div>
+              {/* Sentence display */}
+              <div className="mb-6">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                    Fill in the blank
+                  </span>
+                  {ttsSupported && (
+                    <button
+                      type="button"
+                      onClick={handleSpeak}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      </svg>
+                      Listen
+                    </button>
+                  )}
+                </div>
+                <p className="text-xl font-medium leading-relaxed text-zinc-900 dark:text-zinc-50">
+                  {current.blankedSentence.split('_____').map((part, i, arr) => (
+                    <span key={i}>
+                      {part}
+                      {i < arr.length - 1 && (
+                        <span className="inline-block min-w-[80px] border-b-2 border-blue-500 text-center text-blue-500 dark:border-blue-400 dark:text-blue-400">
+                          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </p>
+              </div>
+
+              {/* Input */}
+              <ClozeInput
+                ref={inputRef}
+                value={userAnswer}
+                onChange={setUserAnswer}
+                onSubmit={handleSubmit}
+              />
+
+              {/* Mastery indicator */}
+              <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                <span>Current mastery:</span>
+                <div className="flex h-2 w-24 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                  <div
+                    className="bg-blue-500 transition-all"
+                    style={{ width: `${current.sentence.masteryLevel}%` }}
+                  />
+                </div>
+                <span>{current.sentence.masteryLevel}%</span>
+              </div>
+            </div>
+          )}
+
+          {/* Feedback state */}
+          {state === 'feedback' && current && feedbackData && (
+            <div>
+              {/* Show the full sentence with highlighted word */}
+              <div className="mb-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                    Full sentence
+                  </span>
+                  {ttsSupported && (
+                    <button
+                      type="button"
+                      onClick={handleSpeak}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      </svg>
+                      Listen
+                    </button>
+                  )}
+                </div>
+                <p className="text-xl font-medium leading-relaxed text-zinc-900 dark:text-zinc-50">
+                  {current.sentence.sentence.split(/\s+/).map((word, i) => (
+                    <span key={i}>
+                      {i > 0 && ' '}
+                      {i === current.sentence.clozeIndex ? (
+                        <span className="rounded bg-amber-100 px-1 font-bold text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                          {word}
+                        </span>
+                      ) : (
+                        word
+                      )}
+                    </span>
+                  ))}
+                </p>
+              </div>
+
+              {/* Feedback component */}
+              <ClozeFeedback
+                isCorrect={feedbackData.isCorrect}
+                correctWord={feedbackData.correctWord}
+                userAnswer={feedbackData.userAnswer}
+                translation={feedbackData.translation}
+                points={feedbackData.points}
+                newMastery={feedbackData.newMastery}
+                previousMastery={feedbackData.previousMastery}
+                onNext={handleNext}
+                onAddToAnki={handleAddToAnki}
+                isAddingToAnki={isAddingToAnki}
+                ankiAdded={ankiAdded}
+              />
+            </div>
+          )}
+
+          {/* Complete state */}
+          {state === 'complete' && (
+            <div className="py-8 text-center">
+              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400">
+                <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2 className="mb-2 text-xl font-bold text-zinc-900 dark:text-zinc-50">
+                Practice Complete!
+              </h2>
+              <p className="mb-4 text-zinc-500 dark:text-zinc-400">
+                You reviewed {todayCount} sentences today and earned {points.toLocaleString()} points.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setState('loading');
+                  fetchNewSentences();
+                }}
+                className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition-all hover:bg-blue-700 active:scale-95 dark:bg-blue-500 dark:hover:bg-blue-600"
+              >
+                Load More Sentences
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Tips section */}
+        {state === 'practicing' && (
+          <div className="mt-6 rounded-xl border border-zinc-200 bg-white/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+            <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Tips</h3>
+            <ul className="space-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+              <li>- Type the missing Afrikaans word to complete the sentence</li>
+              <li>- Press Enter or click Check to submit your answer</li>
+              <li>- Correct answers increase mastery: 0% -&gt; 25% -&gt; 50% -&gt; 75% -&gt; 100%</li>
+              <li>- Incorrect answers reset mastery to 0%</li>
+              {ankiConnected && <li>- Add sentences to Anki for additional spaced repetition</li>}
+            </ul>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

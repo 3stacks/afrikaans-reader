@@ -1,0 +1,73 @@
+import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic();
+
+export async function POST(request: NextRequest) {
+  try {
+    const { word, sentence, type = 'word' } = await request.json();
+
+    if (!word) {
+      return NextResponse.json({ error: 'Word is required' }, { status: 400 });
+    }
+
+    if (type === 'phrase') {
+      // Phrase translation
+      const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans phrase, using the sentence context to determine the correct meaning.
+
+Phrase: "${word}"
+Sentence context: "${sentence || word}"
+
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
+{"translation": "the natural English translation", "literalBreakdown": "word-by-word literal translation", "idiomaticMeaning": "explanation if this is an idiom or has special meaning"}
+
+Include literalBreakdown if the phrase is more than one word.
+Include idiomaticMeaning only if the phrase is an idiom or has a meaning that differs from the literal translation.`;
+
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const content = message.content[0];
+      if (content.type !== 'text') {
+        return NextResponse.json({ error: 'Unexpected response type' }, { status: 500 });
+      }
+
+      const result = JSON.parse(content.text);
+      return NextResponse.json(result);
+    } else {
+      // Word translation
+      const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans word, using the sentence context to determine the correct meaning.
+
+Word: "${word}"
+Sentence context: "${sentence || word}"
+
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
+{"translation": "the English translation", "partOfSpeech": "noun/verb/adjective/adverb/etc"}
+
+If you cannot determine the part of speech, omit that field.`;
+
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const content = message.content[0];
+      if (content.type !== 'text') {
+        return NextResponse.json({ error: 'Unexpected response type' }, { status: 500 });
+      }
+
+      const result = JSON.parse(content.text);
+      return NextResponse.json(result);
+    }
+  } catch (error) {
+    console.error('Translation error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Translation failed' },
+      { status: 500 }
+    );
+  }
+}
