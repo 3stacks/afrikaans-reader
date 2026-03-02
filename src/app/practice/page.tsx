@@ -141,6 +141,9 @@ export default function PracticePage() {
   } | null>(null);
   const [isAddingToAnki, setIsAddingToAnki] = useState(false);
   const [ankiAdded, setAnkiAdded] = useState(false);
+  const [hintLetters, setHintLetters] = useState(0); // Number of hint letters shown
+  const [showingAnswer, setShowingAnswer] = useState(false); // Showing answer before retry
+  const [retryQueue, setRetryQueue] = useState<ClozeSentence[]>([]); // Sentences to retry
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -337,11 +340,50 @@ export default function PracticePage() {
     setUserAnswer('');
     setFeedbackData(null);
     setAnkiAdded(false);
+    setHintLetters(0);
+    setShowingAnswer(false);
     setState('practicing');
 
     // Focus input after state update
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
+
+  // Handle hint - reveal next letter
+  const handleHint = useCallback(() => {
+    if (!current) return;
+    const correctWord = normalize(current.sentence.clozeWord);
+    const nextHintCount = Math.min(hintLetters + 1, correctWord.length);
+    setHintLetters(nextHintCount);
+    // Pre-fill the input with hint letters
+    setUserAnswer(correctWord.slice(0, nextHintCount));
+    inputRef.current?.focus();
+  }, [current, hintLetters]);
+
+  // Handle "give up" - show answer but add to retry queue
+  const handleShowAnswer = useCallback(() => {
+    if (!current) return;
+    setShowingAnswer(true);
+    // Add to retry queue (will see it again later)
+    setRetryQueue(prev => [...prev, current.sentence]);
+  }, [current]);
+
+  // Continue after seeing the answer
+  const handleContinueAfterShow = useCallback(() => {
+    setShowingAnswer(false);
+    const remainingQueue = queue.slice(1);
+    setQueue(remainingQueue);
+
+    if (remainingQueue.length > 0) {
+      loadNextSentence(remainingQueue);
+    } else if (retryQueue.length > 0) {
+      // Process retry queue
+      const nextRetry = retryQueue[0];
+      setRetryQueue(prev => prev.slice(1));
+      loadNextSentence([nextRetry]);
+    } else {
+      setState('complete');
+    }
+  }, [queue, retryQueue, loadNextSentence]);
 
   // Handle answer submission
   const handleSubmit = async () => {
@@ -407,6 +449,12 @@ export default function PracticePage() {
 
     if (remainingQueue.length > 0) {
       loadNextSentence(remainingQueue);
+    } else if (retryQueue.length > 0) {
+      // Process retry queue first
+      const retryList = [...retryQueue];
+      setRetryQueue([]);
+      setQueue(retryList);
+      loadNextSentence(retryList);
     } else if (todayCount < DAILY_GOAL) {
       // Try to fetch more sentences
       setState('loading');
@@ -561,9 +609,14 @@ export default function PracticePage() {
                             value={userAnswer}
                             onChange={(e) => setUserAnswer(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter' && userAnswer.trim()) {
+                              if (e.key === 'Enter') {
                                 e.preventDefault();
-                                handleSubmit();
+                                if (fuzzyStatus === 'match') {
+                                  handleSubmit();
+                                } else {
+                                  // Show answer and retry later
+                                  handleShowAnswer();
+                                }
                               }
                             }}
                             autoComplete="off"
@@ -571,6 +624,7 @@ export default function PracticePage() {
                             autoCorrect="off"
                             spellCheck={false}
                             placeholder="..."
+                            disabled={showingAnswer}
                             className={`inline-block w-32 rounded-lg border-2 px-2 py-1 text-center text-xl font-medium outline-none transition-all
                               focus:ring-2 focus:ring-offset-1
                               ${inputColorClass}
@@ -593,21 +647,54 @@ export default function PracticePage() {
                   </p>
                 </div>
 
-                {/* Submit button */}
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={!userAnswer.trim()}
-                    className={`rounded-xl px-8 py-3 text-lg font-semibold transition-all
-                      ${!userAnswer.trim()
-                        ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed dark:bg-zinc-700 dark:text-zinc-500'
-                        : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 dark:bg-blue-500 dark:hover:bg-blue-600'
-                      }`}
-                  >
-                    Check
-                  </button>
-                </div>
+                {/* Showing answer overlay */}
+                {showingAnswer && (
+                  <div className="mb-4 rounded-xl bg-amber-50 border-2 border-amber-200 p-4 dark:bg-amber-950/30 dark:border-amber-800">
+                    <p className="text-center text-lg font-medium text-amber-800 dark:text-amber-200">
+                      The answer was: <span className="font-bold">{current.sentence.clozeWord}</span>
+                    </p>
+                    <p className="text-center text-sm text-amber-600 dark:text-amber-400 mt-1">
+                      You&apos;ll see this sentence again later
+                    </p>
+                    <div className="flex justify-center mt-3">
+                      <button
+                        type="button"
+                        onClick={handleContinueAfterShow}
+                        className="rounded-lg bg-amber-500 px-6 py-2 text-white font-medium hover:bg-amber-600 active:scale-95 transition-all"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Buttons */}
+                {!showingAnswer && (
+                  <div className="flex justify-center gap-3">
+                    {/* Hint button */}
+                    <button
+                      type="button"
+                      onClick={handleHint}
+                      className="rounded-xl px-4 py-3 text-sm font-medium text-zinc-600 bg-zinc-100 hover:bg-zinc-200 dark:text-zinc-400 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-all"
+                      title="Reveal next letter"
+                    >
+                      Hint ({hintLetters > 0 ? `${hintLetters} letter${hintLetters > 1 ? 's' : ''}` : '?'})
+                    </button>
+
+                    {/* Check/Submit button */}
+                    <button
+                      type="button"
+                      onClick={fuzzyStatus === 'match' ? handleSubmit : handleShowAnswer}
+                      className={`rounded-xl px-8 py-3 text-lg font-semibold transition-all
+                        ${fuzzyStatus === 'match'
+                          ? 'bg-green-600 text-white hover:bg-green-700 active:scale-95 dark:bg-green-500 dark:hover:bg-green-600'
+                          : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 dark:bg-blue-500 dark:hover:bg-blue-600'
+                        }`}
+                    >
+                      {fuzzyStatus === 'match' ? 'Submit' : 'Check'}
+                    </button>
+                  </div>
+                )}
 
                 {/* Mastery indicator */}
                 <div className="mt-6 flex items-center justify-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
