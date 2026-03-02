@@ -247,6 +247,42 @@ export default function ReadPage({
     closeWordPanel();
   }, [wordPanel, bookId, closeWordPanel]);
 
+  // Set word to specific level (1-4)
+  const setWordLevel = useCallback(async (level: 1 | 2 | 3 | 4) => {
+    if (!wordPanel.translation) return;
+
+    const state = `level${level}` as 'level1' | 'level2' | 'level3' | 'level4';
+
+    if (!wordPanel.existingEntry) {
+      // Create new entry with this level
+      const entry: VocabEntry = {
+        id: uuidv4(),
+        text: wordPanel.word.toLowerCase(),
+        type: wordPanel.word.includes(' ') ? 'phrase' : 'word',
+        sentence: wordPanel.sentence,
+        translation: wordPanel.translation,
+        state,
+        stateUpdatedAt: new Date(),
+        reviewCount: 0,
+        bookId: bookId,
+        createdAt: new Date(),
+        pushedToAnki: false,
+      };
+      await saveVocab(entry);
+      await incrementDailyStat('newWordsSaved');
+      setWordPanel((prev) => ({ ...prev, existingEntry: entry }));
+    } else {
+      // Update existing entry
+      await updateVocabState(wordPanel.existingEntry.id, state);
+      setWordPanel((prev) => ({
+        ...prev,
+        existingEntry: prev.existingEntry ? { ...prev.existingEntry, state } : null,
+      }));
+    }
+
+    setReaderRefreshTrigger(prev => prev + 1);
+  }, [wordPanel, bookId]);
+
   // Handle close
   const handleClose = useCallback(() => {
     router.push('/');
@@ -278,12 +314,16 @@ export default function ReadPage({
         e.preventDefault();
         e.stopPropagation();
         saveWordToVocab();
+      } else if (['1', '2', '3', '4'].includes(e.key) && wordPanel.translation) {
+        e.preventDefault();
+        e.stopPropagation();
+        setWordLevel(parseInt(e.key) as 1 | 2 | 3 | 4);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [wordPanel.isOpen, wordPanel.existingEntry, wordPanel.translation, closeWordPanel, markAsKnown, ignoreWord, saveWordToVocab]);
+  }, [wordPanel.isOpen, wordPanel.existingEntry, wordPanel.translation, closeWordPanel, markAsKnown, ignoreWord, saveWordToVocab, setWordLevel]);
 
   // Loading state
   if (isLoading) {
@@ -371,34 +411,59 @@ export default function ReadPage({
                 )}
               </div>
 
+              {/* Level buttons (LingQ-style) */}
+              {wordPanel.translation && (
+                <div className="flex items-center gap-1 border-r border-zinc-200 dark:border-zinc-600 pr-3 mr-1">
+                  {[1, 2, 3, 4].map((level) => {
+                    const currentLevel = wordPanel.existingEntry?.state;
+                    const isActive = currentLevel === `level${level}`;
+                    const colors = {
+                      1: 'bg-blue-500 hover:bg-blue-600',
+                      2: 'bg-blue-400 hover:bg-blue-500',
+                      3: 'bg-blue-300 hover:bg-blue-400',
+                      4: 'bg-blue-200 hover:bg-blue-300',
+                    };
+                    return (
+                      <button
+                        key={level}
+                        onClick={() => setWordLevel(level as 1 | 2 | 3 | 4)}
+                        className={`w-7 h-7 text-sm font-bold rounded transition-all
+                          ${isActive
+                            ? `${colors[level as keyof typeof colors]} text-white ring-2 ring-offset-1 ring-blue-500`
+                            : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-600'
+                          }`}
+                        title={`Level ${level}`}
+                      >
+                        {level}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Action buttons */}
               <div className="flex items-center gap-2">
-                {!wordPanel.existingEntry && wordPanel.translation && (
-                  <button
-                    onClick={saveWordToVocab}
-                    className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded
-                      hover:bg-blue-600 transition-colors font-medium"
-                    title="Save (S)"
-                  >
-                    Save
-                  </button>
-                )}
                 <button
                   onClick={markAsKnown}
-                  className="px-3 py-1.5 text-sm bg-green-500 text-white rounded
-                    hover:bg-green-600 transition-colors font-medium"
+                  className={`px-3 py-1.5 text-sm rounded transition-colors font-medium
+                    ${wordPanel.existingEntry?.state === 'known'
+                      ? 'bg-green-500 text-white ring-2 ring-offset-1 ring-green-500'
+                      : 'bg-green-500 text-white hover:bg-green-600'
+                    }`}
                   title="Known (K)"
                 >
-                  Known
+                  ✓
                 </button>
                 <button
                   onClick={ignoreWord}
-                  className="px-3 py-1.5 text-sm bg-zinc-200 dark:bg-zinc-700 rounded
-                    hover:bg-zinc-300 dark:hover:bg-zinc-600 transition-colors
-                    text-zinc-700 dark:text-zinc-300"
+                  className={`px-3 py-1.5 text-sm rounded transition-colors
+                    ${wordPanel.existingEntry?.state === 'ignored'
+                      ? 'bg-zinc-400 text-white ring-2 ring-offset-1 ring-zinc-400'
+                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600'
+                    }`}
                   title="Ignore (X)"
                 >
-                  Ignore
+                  ✕
                 </button>
                 <button
                   onClick={closeWordPanel}
