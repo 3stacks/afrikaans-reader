@@ -27,8 +27,8 @@ import { addClozeCard, isAnkiConnected } from '@/lib/anki';
 
 // Constants
 const DAILY_GOAL = 50;
-const ANKI_DECK_SETTING_KEY = 'afrikaans-reader-anki-deck';
-const DEFAULT_ANKI_DECK = 'Afrikaans::Cloze';
+const ANKI_CLOZE_DECK_SETTING_KEY = 'afrikaans-reader-anki-cloze-deck';
+const DEFAULT_ANKI_CLOZE_DECK = 'Afrikaans::Cloze';
 
 // Helper function to create blanked sentence
 function createBlankedSentence(sentence: string, wordIndex: number): string {
@@ -499,8 +499,8 @@ export default function PracticePage() {
     setIsAddingToAnki(true);
     setAnkiError(null);
     try {
-      // Get deck name from settings or use default
-      const deckName = localStorage.getItem(ANKI_DECK_SETTING_KEY) || DEFAULT_ANKI_DECK;
+      // Get cloze deck name from settings or use default
+      const deckName = localStorage.getItem(ANKI_CLOZE_DECK_SETTING_KEY) || DEFAULT_ANKI_CLOZE_DECK;
 
       await addClozeCard(
         deckName,

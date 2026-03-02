@@ -21,6 +21,7 @@ const SETTINGS_KEYS = {
   ANTHROPIC_API_KEY: "afrikaans-reader-api-key",
   GOOGLE_CLOUD_API_KEY: "afrikaans-reader-google-api-key",
   ANKI_DECK_NAME: "afrikaans-reader-anki-deck",
+  ANKI_CLOZE_DECK_NAME: "afrikaans-reader-anki-cloze-deck",
   DEFAULT_CARD_TYPE: "afrikaans-reader-card-type",
   TTS_SPEED: "afrikaans-reader-tts-speed",
   THEME: "afrikaans-reader-theme",
@@ -33,6 +34,7 @@ interface AppSettings {
   apiKey: string;
   googleApiKey: string;
   ankiDeckName: string;
+  ankiClozeDeckName: string;
   defaultCardType: CardType;
   ttsSpeed: number;
   ttsMode: TTSMode;
@@ -43,6 +45,7 @@ const defaultSettings: AppSettings = {
   apiKey: "",
   googleApiKey: "",
   ankiDeckName: "Afrikaans",
+  ankiClozeDeckName: "Afrikaans::Cloze",
   defaultCardType: "basic",
   ttsSpeed: 1.0,
   ttsMode: "google",
@@ -82,6 +85,8 @@ export default function SettingsPage() {
       googleApiKey: localStorage.getItem(SETTINGS_KEYS.GOOGLE_CLOUD_API_KEY) || "",
       ankiDeckName:
         localStorage.getItem(SETTINGS_KEYS.ANKI_DECK_NAME) || "Afrikaans",
+      ankiClozeDeckName:
+        localStorage.getItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME) || "Afrikaans::Cloze",
       defaultCardType:
         (localStorage.getItem(SETTINGS_KEYS.DEFAULT_CARD_TYPE) as CardType) ||
         "basic",
@@ -157,6 +162,7 @@ export default function SettingsPage() {
       apiKey: SETTINGS_KEYS.ANTHROPIC_API_KEY,
       googleApiKey: SETTINGS_KEYS.GOOGLE_CLOUD_API_KEY,
       ankiDeckName: SETTINGS_KEYS.ANKI_DECK_NAME,
+      ankiClozeDeckName: SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME,
       defaultCardType: SETTINGS_KEYS.DEFAULT_CARD_TYPE,
       ttsSpeed: SETTINGS_KEYS.TTS_SPEED,
       ttsMode: "", // Handled separately
@@ -675,7 +681,7 @@ export default function SettingsPage() {
             {/* Deck Selector */}
             <div className="mb-4">
               <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Default Deck
+                Vocab Deck
               </label>
               {ankiConnected && ankiDecks.length > 0 ? (
                 <select
@@ -699,9 +705,38 @@ export default function SettingsPage() {
                 />
               )}
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-                {ankiConnected
-                  ? "Select from your existing decks"
-                  : "Connect to Anki to see available decks, or enter a deck name manually"}
+                Deck for basic cards from reader vocabulary
+              </p>
+            </div>
+
+            {/* Cloze Deck Name */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Cloze Practice Deck
+              </label>
+              {ankiConnected && ankiDecks.length > 0 ? (
+                <select
+                  value={settings.ankiClozeDeckName}
+                  onChange={(e) => saveSetting("ankiClozeDeckName", e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {ankiDecks.map((deck) => (
+                    <option key={deck} value={deck}>
+                      {deck}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={settings.ankiClozeDeckName}
+                  onChange={(e) => saveSetting("ankiClozeDeckName", e.target.value)}
+                  placeholder="Cloze deck name"
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                />
+              )}
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                Deck for cloze cards from practice mode
               </p>
             </div>
 
