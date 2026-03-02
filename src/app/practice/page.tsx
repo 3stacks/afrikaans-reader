@@ -357,6 +357,11 @@ export default function PracticePage() {
     });
 
     setState('feedback');
+
+    // Auto-play audio on correct answer
+    if (isCorrect) {
+      speak(current.sentence.sentence);
+    }
   };
 
   // Handle next sentence
@@ -501,22 +506,10 @@ export default function PracticePage() {
             <div>
               {/* Sentence display */}
               <div className="mb-6">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2">
                   <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                     Fill in the blank
                   </span>
-                  {ttsSupported && (
-                    <button
-                      type="button"
-                      onClick={handleSpeak}
-                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                      </svg>
-                      Listen
-                    </button>
-                  )}
                 </div>
                 <p className="text-xl font-medium leading-relaxed text-zinc-900 dark:text-zinc-50">
                   {current.blankedSentence.split('_____').map((part, i, arr) => (
@@ -529,6 +522,10 @@ export default function PracticePage() {
                       )}
                     </span>
                   ))}
+                </p>
+                {/* English translation */}
+                <p className="mt-2 text-base text-zinc-500 dark:text-zinc-400 italic">
+                  {current.sentence.translation}
                 </p>
               </div>
 
@@ -561,9 +558,9 @@ export default function PracticePage() {
               <div className="mb-4">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                    Full sentence
+                    {feedbackData.isCorrect ? 'Correct!' : 'Incorrect'}
                   </span>
-                  {ttsSupported && (
+                  {ttsSupported && feedbackData.isCorrect && (
                     <button
                       type="button"
                       onClick={handleSpeak}
@@ -572,7 +569,7 @@ export default function PracticePage() {
                       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                       </svg>
-                      Listen
+                      Listen Again
                     </button>
                   )}
                 </div>
@@ -581,7 +578,11 @@ export default function PracticePage() {
                     <span key={i}>
                       {i > 0 && ' '}
                       {i === current.sentence.clozeIndex ? (
-                        <span className="rounded bg-amber-100 px-1 font-bold text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                        <span className={`rounded px-1 font-bold ${
+                          feedbackData.isCorrect
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+                        }`}>
                           {word}
                         </span>
                       ) : (
@@ -589,6 +590,10 @@ export default function PracticePage() {
                       )}
                     </span>
                   ))}
+                </p>
+                {/* English translation */}
+                <p className="mt-2 text-base text-zinc-500 dark:text-zinc-400 italic">
+                  {current.sentence.translation}
                 </p>
               </div>
 
