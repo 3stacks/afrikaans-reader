@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { getDeckNames, isAnkiConnected } from "@/lib/anki";
+import { getTTSMode, setTTSMode, isGoogleTTSConfigured, speak, type TTSMode } from "@/lib/tts";
 import {
   db,
   exportAllData,
@@ -18,6 +19,7 @@ import {
 // Settings keys for localStorage
 const SETTINGS_KEYS = {
   ANTHROPIC_API_KEY: "afrikaans-reader-api-key",
+  GOOGLE_CLOUD_API_KEY: "afrikaans-reader-google-api-key",
   ANKI_DECK_NAME: "afrikaans-reader-anki-deck",
   DEFAULT_CARD_TYPE: "afrikaans-reader-card-type",
   TTS_SPEED: "afrikaans-reader-tts-speed",
@@ -29,17 +31,21 @@ type Theme = "light" | "dark" | "system";
 
 interface AppSettings {
   apiKey: string;
+  googleApiKey: string;
   ankiDeckName: string;
   defaultCardType: CardType;
   ttsSpeed: number;
+  ttsMode: TTSMode;
   theme: Theme;
 }
 
 const defaultSettings: AppSettings = {
   apiKey: "",
+  googleApiKey: "",
   ankiDeckName: "Afrikaans",
   defaultCardType: "basic",
   ttsSpeed: 1.0,
+  ttsMode: "google",
   theme: "system",
 };
 
@@ -65,10 +71,15 @@ export default function SettingsPage() {
   const [clearConfirmText, setCllearConfirmText] = useState("");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
+  // TTS state
+  const [googleTTSAvailable, setGoogleTTSAvailable] = useState<boolean | null>(null);
+  const [showGoogleApiKey, setShowGoogleApiKey] = useState(false);
+
   // Load settings from localStorage on mount
   useEffect(() => {
     const loadedSettings: AppSettings = {
       apiKey: localStorage.getItem(SETTINGS_KEYS.ANTHROPIC_API_KEY) || "",
+      googleApiKey: localStorage.getItem(SETTINGS_KEYS.GOOGLE_CLOUD_API_KEY) || "",
       ankiDeckName:
         localStorage.getItem(SETTINGS_KEYS.ANKI_DECK_NAME) || "Afrikaans",
       defaultCardType:
@@ -77,6 +88,7 @@ export default function SettingsPage() {
       ttsSpeed: parseFloat(
         localStorage.getItem(SETTINGS_KEYS.TTS_SPEED) || "1.0"
       ),
+      ttsMode: getTTSMode(),
       theme: (localStorage.getItem(SETTINGS_KEYS.THEME) as Theme) || "system",
     };
     setSettings(loadedSettings);
@@ -88,6 +100,9 @@ export default function SettingsPage() {
     getSetting<string>('ankiConnectUrl').then((url) => {
       if (url) setAnkiConnectUrl(url);
     });
+
+    // Check if Google TTS is configured
+    isGoogleTTSConfigured().then(setGoogleTTSAvailable);
   }, []);
 
   // Check Anki connection
@@ -140,13 +155,19 @@ export default function SettingsPage() {
     // Map to localStorage key
     const storageKeyMap: Record<keyof AppSettings, string> = {
       apiKey: SETTINGS_KEYS.ANTHROPIC_API_KEY,
+      googleApiKey: SETTINGS_KEYS.GOOGLE_CLOUD_API_KEY,
       ankiDeckName: SETTINGS_KEYS.ANKI_DECK_NAME,
       defaultCardType: SETTINGS_KEYS.DEFAULT_CARD_TYPE,
       ttsSpeed: SETTINGS_KEYS.TTS_SPEED,
+      ttsMode: "", // Handled separately
       theme: SETTINGS_KEYS.THEME,
     };
 
-    localStorage.setItem(storageKeyMap[key], String(value));
+    if (key === "ttsMode") {
+      setTTSMode(value as TTSMode);
+    } else {
+      localStorage.setItem(storageKeyMap[key], String(value));
+    }
 
     // Apply theme immediately if changed
     if (key === "theme") {
@@ -719,9 +740,107 @@ export default function SettingsPage() {
 
           {/* TTS Settings Section */}
           <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              Text-to-Speech
-            </h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Text-to-Speech
+              </h2>
+              {googleTTSAvailable !== null && (
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      googleTTSAvailable ? "bg-green-500" : "bg-yellow-500"
+                    }`}
+                  />
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    {googleTTSAvailable ? "Google TTS Active" : "Using Browser TTS"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Google Cloud API Key */}
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Google Cloud API Key
+              </label>
+              <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-500">
+                For high-quality Afrikaans pronunciation. Get a key from{" "}
+                <a
+                  href="https://console.cloud.google.com/apis/credentials"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  Google Cloud Console
+                </a>
+                {" "}(enable Text-to-Speech API).
+              </p>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showGoogleApiKey ? "text" : "password"}
+                    value={showGoogleApiKey ? settings.googleApiKey : getMaskedApiKey(settings.googleApiKey)}
+                    onChange={(e) => saveSetting("googleApiKey", e.target.value)}
+                    placeholder="AIza..."
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                    readOnly={!showGoogleApiKey}
+                  />
+                </div>
+                <button
+                  onClick={() => setShowGoogleApiKey(!showGoogleApiKey)}
+                  className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  {showGoogleApiKey ? "Hide" : "Show"}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Note: Set GOOGLE_CLOUD_API_KEY in your .env file for server-side use
+              </p>
+            </div>
+
+            {/* TTS Mode Toggle */}
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Voice Engine
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveSetting("ttsMode", "google")}
+                  className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    settings.ttsMode === "google"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  Google Cloud
+                </button>
+                <button
+                  onClick={() => saveSetting("ttsMode", "browser")}
+                  className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    settings.ttsMode === "browser"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  Browser Built-in
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Google Cloud has better pronunciation, browser is free
+              </p>
+            </div>
+
+            {/* Test TTS */}
+            <div className="mb-4">
+              <button
+                onClick={() => speak("Hallo, hoe gaan dit met jou?", settings.ttsSpeed)}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Test Voice
+              </button>
+            </div>
+
+            {/* Speed Slider */}
             <div>
               <label className="mb-2 flex items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 <span>Speech Speed</span>

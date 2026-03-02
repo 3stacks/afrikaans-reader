@@ -1,4 +1,5 @@
-// Browser Text-to-Speech wrapper for Afrikaans
+// Text-to-Speech wrapper for Afrikaans
+// Uses Google Cloud TTS when available, falls back to browser TTS
 
 // Default speech rate (1.0 is normal speed)
 const DEFAULT_RATE = 0.9;
@@ -24,19 +25,42 @@ const AVOID_VOICE_PATTERNS = [
   /mbrola/i,
 ];
 
-// Cached voice selection
+// Cached voice selection for browser TTS
 let cachedVoice: SpeechSynthesisVoice | undefined;
 let voiceInitialized = false;
 
-// LocalStorage key for user's preferred voice
+// Audio element for Google TTS playback
+let audioElement: HTMLAudioElement | null = null;
+
+// LocalStorage keys
 const VOICE_PREF_KEY = 'afrikaans-reader-tts-voice';
+const TTS_MODE_KEY = 'afrikaans-reader-tts-mode';
+
+// TTS modes
+export type TTSMode = 'google' | 'browser';
 
 /**
  * Check if the browser supports the Web Speech API
- * @returns true if TTS is available
+ * @returns true if browser TTS is available
  */
 export function isTTSAvailable(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
+/**
+ * Get the current TTS mode preference
+ */
+export function getTTSMode(): TTSMode {
+  if (typeof window === "undefined") return 'browser';
+  return (localStorage.getItem(TTS_MODE_KEY) as TTSMode) || 'google';
+}
+
+/**
+ * Set the TTS mode preference
+ */
+export function setTTSMode(mode: TTSMode): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TTS_MODE_KEY, mode);
 }
 
 /**
@@ -73,7 +97,7 @@ function scoreVoice(voice: SpeechSynthesisVoice): number {
 }
 
 /**
- * Get the best available voice for Afrikaans
+ * Get the best available voice for Afrikaans (browser TTS)
  * Caches the result for consistent voice selection
  * @returns The voice to use, or undefined if none found
  */
@@ -128,7 +152,7 @@ function getAfrikaansVoice(): SpeechSynthesisVoice | undefined {
 }
 
 /**
- * Set a specific voice by name
+ * Set a specific voice by name (browser TTS)
  * @param voiceName - The name of the voice to use
  */
 export function setPreferredVoice(voiceName: string): void {
@@ -152,18 +176,51 @@ export function getCurrentVoiceName(): string | undefined {
 }
 
 /**
- * Speak text in Afrikaans using the browser's speech synthesis
- * @param text - The text to speak
- * @param rate - Speech rate (0.1 to 10, default 0.9 for clearer learning)
+ * Speak using Google Cloud TTS
+ * @returns true if successful, false if should fall back to browser TTS
  */
-export function speak(text: string, rate: number = DEFAULT_RATE): void {
+async function speakWithGoogle(text: string, rate: number): Promise<boolean> {
+  try {
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, rate }),
+    });
+
+    const data = await response.json();
+
+    // Check if we should fall back to browser TTS
+    if (data.fallback || data.error) {
+      console.log('Google TTS unavailable, using browser TTS:', data.error);
+      return false;
+    }
+
+    // Stop any current audio
+    stopSpeaking();
+
+    // Create audio element and play
+    const audioData = `data:${data.contentType};base64,${data.audioContent}`;
+    audioElement = new Audio(audioData);
+    audioElement.play();
+
+    return true;
+  } catch (error) {
+    console.error('Google TTS error:', error);
+    return false;
+  }
+}
+
+/**
+ * Speak using browser's speech synthesis
+ */
+function speakWithBrowser(text: string, rate: number): void {
   if (!isTTSAvailable()) {
     console.warn("Text-to-speech is not available in this browser");
     return;
   }
 
   // Stop any current speech
-  stopSpeaking();
+  window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
 
@@ -187,18 +244,43 @@ export function speak(text: string, rate: number = DEFAULT_RATE): void {
 }
 
 /**
- * Stop any current speech
+ * Speak text in Afrikaans
+ * Uses Google Cloud TTS if available, falls back to browser TTS
+ * @param text - The text to speak
+ * @param rate - Speech rate (default 0.9 for clearer learning)
  */
-export function stopSpeaking(): void {
-  if (!isTTSAvailable()) {
-    return;
+export async function speak(text: string, rate: number = DEFAULT_RATE): Promise<void> {
+  const mode = getTTSMode();
+
+  if (mode === 'google') {
+    // Try Google TTS first
+    const success = await speakWithGoogle(text, rate);
+    if (success) return;
   }
 
-  window.speechSynthesis.cancel();
+  // Fall back to browser TTS
+  speakWithBrowser(text, rate);
 }
 
 /**
- * Get available voices for Afrikaans or Dutch
+ * Stop any current speech (both Google and browser)
+ */
+export function stopSpeaking(): void {
+  // Stop browser TTS
+  if (isTTSAvailable()) {
+    window.speechSynthesis.cancel();
+  }
+
+  // Stop audio element
+  if (audioElement) {
+    audioElement.pause();
+    audioElement.currentTime = 0;
+    audioElement = null;
+  }
+}
+
+/**
+ * Get available voices for Afrikaans or Dutch (browser TTS)
  * Useful for debugging or letting users choose a voice
  * @returns Array of available voices
  */
@@ -263,4 +345,22 @@ export function resetVoiceCache(): void {
   cachedVoice = undefined;
   voiceInitialized = false;
   localStorage.removeItem(VOICE_PREF_KEY);
+}
+
+/**
+ * Check if Google Cloud TTS is configured
+ * Makes a test request to see if the API key is set
+ */
+export async function isGoogleTTSConfigured(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'test' }),
+    });
+    const data = await response.json();
+    return !data.fallback;
+  } catch {
+    return false;
+  }
 }
