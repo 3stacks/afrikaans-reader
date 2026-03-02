@@ -623,7 +623,6 @@ export default function PracticePage() {
               </div>
             );
           })()}
-          )}
 
           {/* Feedback state */}
           {state === 'feedback' && current && feedbackData && (
