@@ -8,6 +8,7 @@ export type WordState = 'new' | 'level1' | 'level2' | 'level3' | 'level4' | 'kno
 export type VocabType = 'word' | 'phrase';
 export type ClozeMasteryLevel = 0 | 25 | 50 | 75 | 100;
 export type ClozeSource = 'tatoeba' | 'mined';
+export type ClozeCollection = 'top500' | 'top1000' | 'top2000' | 'mined' | 'random';
 
 export interface BookProgress {
   chapter: number;
@@ -67,7 +68,10 @@ export interface ClozeSentence {
   clozeIndex: number;
   translation: string;
   source: ClozeSource;
+  collection: ClozeCollection;
+  wordRank?: number;  // Frequency rank of cloze word (1-2000, undefined if not in dictionary)
   tatoebaSentenceId?: number;
+  vocabEntryId?: string;  // Link to vocab entry if mined
   masteryLevel: ClozeMasteryLevel;
   nextReview: Date;
   reviewCount: number;
@@ -117,8 +121,8 @@ class AfrikaansLearningDB extends Dexie {
       // KnownWords: fast lookup table, indexed by normalized word
       knownWords: 'word, state',
 
-      // ClozeSentences: indexed for review scheduling
-      clozeSentences: 'id, clozeWord, source, masteryLevel, nextReview, tatoebaSentenceId',
+      // ClozeSentences: indexed for review scheduling and collections
+      clozeSentences: 'id, clozeWord, source, collection, wordRank, masteryLevel, nextReview, tatoebaSentenceId',
 
       // DailyStats: indexed by date (primary key)
       dailyStats: 'date',
@@ -385,6 +389,97 @@ export async function getClozeSentencesForWord(word: string): Promise<ClozeSente
 
 export async function bulkSaveClozeSentences(sentences: ClozeSentence[]): Promise<void> {
   await db.clozeSentences.bulkPut(sentences);
+}
+
+/**
+ * Get sentences due for review from a specific collection
+ * Implements anti-clumping by excluding recently used cloze words
+ */
+export async function getClozeSentencesByCollection(
+  collection: ClozeCollection,
+  limit: number = 20,
+  excludeWords: string[] = []
+): Promise<ClozeSentence[]> {
+  const now = new Date();
+  const excludeSet = new Set(excludeWords.map(w => w.toLowerCase()));
+
+  // Get due sentences from this collection
+  let sentences = await db.clozeSentences
+    .where('collection')
+    .equals(collection)
+    .filter(s => s.nextReview <= now)
+    .toArray();
+
+  // Filter out recently used words
+  if (excludeSet.size > 0) {
+    sentences = sentences.filter(s => !excludeSet.has(s.clozeWord.toLowerCase()));
+  }
+
+  // Sort by nextReview date (oldest first) and wordRank (rarer words first for variety)
+  sentences.sort((a, b) => {
+    const dateDiff = a.nextReview.getTime() - b.nextReview.getTime();
+    if (dateDiff !== 0) return dateDiff;
+    // If same review date, prefer rarer words (higher rank = rarer = more priority)
+    return (b.wordRank || 2001) - (a.wordRank || 2001);
+  });
+
+  return sentences.slice(0, limit);
+}
+
+/**
+ * Get new (unreviewed) sentences from a collection
+ */
+export async function getNewSentencesByCollection(
+  collection: ClozeCollection,
+  limit: number = 20,
+  excludeWords: string[] = []
+): Promise<ClozeSentence[]> {
+  const excludeSet = new Set(excludeWords.map(w => w.toLowerCase()));
+
+  let sentences = await db.clozeSentences
+    .where('collection')
+    .equals(collection)
+    .filter(s => s.reviewCount === 0)
+    .toArray();
+
+  // Filter out recently used words
+  if (excludeSet.size > 0) {
+    sentences = sentences.filter(s => !excludeSet.has(s.clozeWord.toLowerCase()));
+  }
+
+  // Sort by word rank (rarer words first, but mix it up)
+  sentences.sort((a, b) => (a.wordRank || 2001) - (b.wordRank || 2001));
+
+  return sentences.slice(0, limit);
+}
+
+/**
+ * Get count of sentences by collection
+ */
+export async function getCollectionCounts(): Promise<Record<ClozeCollection, { total: number; due: number; mastered: number }>> {
+  const now = new Date();
+  const collections: ClozeCollection[] = ['top500', 'top1000', 'top2000', 'mined', 'random'];
+
+  const counts: Record<ClozeCollection, { total: number; due: number; mastered: number }> = {
+    top500: { total: 0, due: 0, mastered: 0 },
+    top1000: { total: 0, due: 0, mastered: 0 },
+    top2000: { total: 0, due: 0, mastered: 0 },
+    mined: { total: 0, due: 0, mastered: 0 },
+    random: { total: 0, due: 0, mastered: 0 },
+  };
+
+  for (const collection of collections) {
+    const sentences = await db.clozeSentences
+      .where('collection')
+      .equals(collection)
+      .toArray();
+
+    counts[collection].total = sentences.length;
+    counts[collection].due = sentences.filter(s => s.nextReview <= now).length;
+    counts[collection].mastered = sentences.filter(s => s.masteryLevel === 100).length;
+  }
+
+  return counts;
 }
 
 // ============================================================================

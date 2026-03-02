@@ -9,50 +9,24 @@ import {
   db,
   ClozeSentence,
   ClozeMasteryLevel,
+  ClozeCollection,
   getClozeSentencesDueForReview,
+  getClozeSentencesByCollection,
+  getNewSentencesByCollection,
+  getCollectionCounts,
   saveClozeSentence,
   updateClozeAfterReview,
   getTodayStats,
   incrementDailyStat,
+  bulkSaveClozeSentences,
 } from '@/lib/db';
-import { fetchAfrikaansSentences, TatoebaSentence } from '@/lib/tatoeba';
+import { fetchAfrikaansSentences, fetchBulkSentences, TatoebaSentence, findBestClozeWord, getCollectionForRank, ProcessedSentence } from '@/lib/tatoeba';
 import { speak, isTTSAvailable } from '@/lib/tts';
 import { addClozeCard, isAnkiConnected } from '@/lib/anki';
 
 // Constants
 const DAILY_GOAL = 50;
 const ANKI_DECK_NAME = 'Afrikaans::Cloze';
-
-// Helper function to select a word to blank from a sentence
-function selectWordToBlank(sentence: string): { word: string; index: number } {
-  const words = sentence.split(/\s+/);
-
-  // Common words to avoid blanking (articles, prepositions, etc.)
-  const avoidWords = new Set([
-    "'n", "die", "en", "of", "in", "op", "vir", "met", "na", "van",
-    "is", "het", "om", "te", "dat", "wat", "as", "aan", "by", "sy", "hy",
-  ]);
-
-  // Find content words (not in avoid list, length > 2)
-  const contentWordIndices: number[] = [];
-  for (let i = 0; i < words.length; i++) {
-    const cleanWord = words[i].replace(/[.,!?;:'"]/g, '').toLowerCase();
-    if (cleanWord.length > 2 && !avoidWords.has(cleanWord)) {
-      contentWordIndices.push(i);
-    }
-  }
-
-  // Select random content word, or any word if no content words found
-  const candidateIndices = contentWordIndices.length > 0
-    ? contentWordIndices
-    : words.map((_, i) => i).filter((i) => words[i].length > 1);
-
-  const index = candidateIndices.length > 0
-    ? candidateIndices[Math.floor(Math.random() * candidateIndices.length)]
-    : 0;
-
-  return { word: words[index], index };
-}
 
 // Helper function to create blanked sentence
 function createBlankedSentence(sentence: string, wordIndex: number): string {
@@ -100,6 +74,14 @@ interface CurrentSentence {
   blankedSentence: string;
 }
 
+const COLLECTION_LABELS: Record<ClozeCollection, string> = {
+  top500: 'Top 500 Words',
+  top1000: 'Words 500-1000',
+  top2000: 'Words 1000-2000',
+  mined: 'From Reading',
+  random: 'Random',
+};
+
 export default function PracticePage() {
   // State
   const [state, setState] = useState<PracticeState>('loading');
@@ -110,6 +92,13 @@ export default function PracticePage() {
   const [points, setPoints] = useState(0);
   const [ttsSupported, setTtsSupported] = useState(false);
   const [ankiConnected, setAnkiConnected] = useState(false);
+
+  // Collection state
+  const [selectedCollection, setSelectedCollection] = useState<ClozeCollection>('top500');
+  const [collectionCounts, setCollectionCounts] = useState<Record<ClozeCollection, { total: number; due: number; mastered: number }> | null>(null);
+  const [recentWords, setRecentWords] = useState<string[]>([]);
+  const [isFetchingBulk, setIsFetchingBulk] = useState(false);
+  const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0 });
 
   // Feedback state
   const [feedbackData, setFeedbackData] = useState<{
@@ -125,6 +114,12 @@ export default function PracticePage() {
   const [ankiAdded, setAnkiAdded] = useState(false);
 
   const inputRef = useRef<ClozeInputHandle>(null);
+
+  // Load collection counts
+  const refreshCollectionCounts = useCallback(async () => {
+    const counts = await getCollectionCounts();
+    setCollectionCounts(counts);
+  }, []);
 
   // Initialize - load due sentences and today's stats
   useEffect(() => {
@@ -142,15 +137,24 @@ export default function PracticePage() {
         setTodayCount(stats.clozePracticed);
         setPoints(stats.points);
 
-        // Load due sentences from IndexedDB
-        const dueSentences = await getClozeSentencesDueForReview(DAILY_GOAL);
+        // Load collection counts
+        await refreshCollectionCounts();
+
+        // Load due sentences from selected collection
+        const dueSentences = await getClozeSentencesByCollection(selectedCollection, DAILY_GOAL, recentWords);
 
         if (dueSentences.length > 0) {
           setQueue(dueSentences);
           loadNextSentence(dueSentences);
         } else {
-          // No due sentences, fetch new ones from Tatoeba
-          await fetchNewSentences();
+          // No due sentences, try new sentences or fetch from Tatoeba
+          const newSentences = await getNewSentencesByCollection(selectedCollection, DAILY_GOAL, recentWords);
+          if (newSentences.length > 0) {
+            setQueue(newSentences);
+            loadNextSentence(newSentences);
+          } else {
+            await fetchNewSentences();
+          }
         }
       } catch (error) {
         console.error('Failed to initialize practice:', error);
@@ -159,7 +163,7 @@ export default function PracticePage() {
     };
 
     initialize();
-  }, []);
+  }, [selectedCollection, refreshCollectionCounts]);
 
   // Fetch new sentences from Tatoeba
   const fetchNewSentences = async () => {
@@ -178,7 +182,8 @@ export default function PracticePage() {
       // Convert to ClozeSentence and save to DB
       const newSentences: ClozeSentence[] = [];
       for (const s of validSentences) {
-        const { word, index } = selectWordToBlank(s.text);
+        const { word, index, rank } = findBestClozeWord(s.text);
+        const collection = getCollectionForRank(rank);
 
         // Check if this sentence already exists
         const existing = await db.clozeSentences
@@ -194,6 +199,8 @@ export default function PracticePage() {
             clozeIndex: index,
             translation: s.translation.text,
             source: 'tatoeba',
+            collection,
+            wordRank: rank,
             tatoebaSentenceId: s.id,
             masteryLevel: 0,
             nextReview: new Date(),
@@ -223,6 +230,61 @@ export default function PracticePage() {
     } catch (error) {
       console.error('Failed to fetch sentences:', error);
       setState('complete');
+    }
+  };
+
+  // Bulk fetch sentences from Tatoeba (pre-populate database)
+  const handleBulkFetch = async () => {
+    setIsFetchingBulk(true);
+    setFetchProgress({ current: 0, total: 10 });
+
+    try {
+      const processedSentences = await fetchBulkSentences(10, (current, total) => {
+        setFetchProgress({ current, total });
+      });
+
+      // Convert to ClozeSentence objects
+      const clozeSentences: ClozeSentence[] = [];
+      for (const s of processedSentences) {
+        if (!s.translation) continue;
+
+        // Check if already exists
+        const existing = await db.clozeSentences
+          .where('tatoebaSentenceId')
+          .equals(s.id)
+          .first();
+
+        if (!existing) {
+          clozeSentences.push({
+            id: uuidv4(),
+            sentence: s.text,
+            clozeWord: s.clozeWord,
+            clozeIndex: s.clozeIndex,
+            translation: s.translation.text,
+            source: 'tatoeba',
+            collection: s.collection,
+            wordRank: s.wordRank,
+            tatoebaSentenceId: s.id,
+            masteryLevel: 0,
+            nextReview: new Date(),
+            reviewCount: 0,
+            timesCorrect: 0,
+            timesIncorrect: 0,
+          });
+        }
+      }
+
+      if (clozeSentences.length > 0) {
+        await bulkSaveClozeSentences(clozeSentences);
+      }
+
+      await refreshCollectionCounts();
+      alert(`Fetched ${clozeSentences.length} new sentences!`);
+    } catch (error) {
+      console.error('Bulk fetch failed:', error);
+      alert('Failed to fetch sentences. Check console for details.');
+    } finally {
+      setIsFetchingBulk(false);
     }
   };
 
@@ -292,6 +354,14 @@ export default function PracticePage() {
 
   // Handle next sentence
   const handleNext = async () => {
+    // Track recently used words for anti-clumping (keep last 10)
+    if (current) {
+      setRecentWords(prev => {
+        const updated = [current.sentence.clozeWord.toLowerCase(), ...prev].slice(0, 10);
+        return updated;
+      });
+    }
+
     const remainingQueue = queue.slice(1);
     setQueue(remainingQueue);
 
@@ -375,6 +445,38 @@ export default function PracticePage() {
               Daily goal reached! Keep going for bonus practice.
             </p>
           )}
+
+          {/* Collection selector */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {(['top500', 'top1000', 'top2000', 'mined', 'random'] as ClozeCollection[]).map((coll) => {
+              const count = collectionCounts?.[coll];
+              return (
+                <button
+                  key={coll}
+                  onClick={() => setSelectedCollection(coll)}
+                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                    selectedCollection === coll
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {COLLECTION_LABELS[coll]}
+                  {count && (
+                    <span className="ml-1.5 text-xs opacity-75">
+                      ({count.due}/{count.total})
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <button
+              onClick={handleBulkFetch}
+              disabled={isFetchingBulk}
+              className="ml-auto rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+            >
+              {isFetchingBulk ? `Fetching ${fetchProgress.current}/${fetchProgress.total}...` : 'Fetch More'}
+            </button>
+          </div>
         </div>
 
         {/* Main content area */}
