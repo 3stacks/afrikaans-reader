@@ -10,12 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build image
+        run: docker build -t afrikaans-reader:latest .
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: registry.home.lukeboyle.com/afrikaans-reader:latest
+      - name: Tag and push to registry
+        run: |
+          # Use host.docker.internal to reach the registry from inside Docker
+          docker tag afrikaans-reader:latest host.docker.internal:5050/afrikaans-reader:latest
+          docker push host.docker.internal:5050/afrikaans-reader:latest
