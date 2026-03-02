@@ -19,6 +19,7 @@ import {
   getTodayStats,
   incrementDailyStat,
   bulkSaveClozeSentences,
+  migrateClozeSentences,
 } from '@/lib/db';
 import { fetchAfrikaansSentences, fetchBulkSentences, TatoebaSentence, findBestClozeWord, getCollectionForRank, ProcessedSentence } from '@/lib/tatoeba';
 import { speak, isTTSAvailable } from '@/lib/tts';
@@ -136,6 +137,12 @@ export default function PracticePage() {
         const stats = await getTodayStats();
         setTodayCount(stats.clozePracticed);
         setPoints(stats.points);
+
+        // Migrate existing sentences to have collections
+        const migrated = await migrateClozeSentences();
+        if (migrated > 0) {
+          console.log(`Migrated ${migrated} cloze sentences to collections`);
+        }
 
         // Load collection counts
         await refreshCollectionCounts();

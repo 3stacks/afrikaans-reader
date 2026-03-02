@@ -392,6 +392,50 @@ export async function bulkSaveClozeSentences(sentences: ClozeSentence[]): Promis
 }
 
 /**
+ * Migrate existing cloze sentences to add collection field
+ * Call this on app startup to ensure all sentences have collections
+ */
+export async function migrateClozeSentences(): Promise<number> {
+  // Import here to avoid circular dependency
+  const { lookupWord } = await import('./dictionary');
+
+  const allSentences = await db.clozeSentences.toArray();
+  let migratedCount = 0;
+
+  for (const sentence of allSentences) {
+    // Skip if already has collection
+    if (sentence.collection) continue;
+
+    // Look up the cloze word to get its rank
+    const entry = lookupWord(sentence.clozeWord);
+    const rank = entry?.rank;
+
+    // Determine collection based on rank
+    let collection: ClozeCollection;
+    if (rank === undefined) {
+      collection = 'random';
+    } else if (rank <= 500) {
+      collection = 'top500';
+    } else if (rank <= 1000) {
+      collection = 'top1000';
+    } else if (rank <= 2000) {
+      collection = 'top2000';
+    } else {
+      collection = 'random';
+    }
+
+    // Update the sentence
+    await db.clozeSentences.update(sentence.id, {
+      collection,
+      wordRank: rank,
+    });
+    migratedCount++;
+  }
+
+  return migratedCount;
+}
+
+/**
  * Get sentences due for review from a specific collection
  * Implements anti-clumping by excluding recently used cloze words
  */
