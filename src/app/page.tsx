@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import NavHeader from '@/components/NavHeader';
 import StatsCard from '@/components/StatsCard';
 import BookCard from '@/components/BookCard';
+import ImportDropdown from '@/components/ImportDropdown';
+import WebImportModal from '@/components/WebImportModal';
 import {
   getAllBooks,
   saveBook,
@@ -21,6 +23,7 @@ export default function Home() {
   const [currentStreak, setCurrentStreak] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
+  const [isWebImportOpen, setIsWebImportOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -179,6 +182,28 @@ export default function Home() {
     }
   }
 
+  async function handleWebImportSave(article: { title: string; author: string; content: string }) {
+    const newBook: Book = {
+      id: uuidv4(),
+      title: article.title,
+      author: article.author,
+      coverUrl: undefined,
+      fileData: new ArrayBuffer(0), // No file data for web imports
+      fileType: 'markdown',
+      textContent: article.content,
+      progress: {
+        chapter: 0,
+        scrollPosition: 0,
+        percentComplete: 0,
+      } as BookProgress,
+      createdAt: new Date(),
+      lastReadAt: new Date(),
+    };
+
+    await saveBook(newBook);
+    setBooks((prev) => [newBook, ...prev]);
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -240,30 +265,11 @@ export default function Home() {
         <section>
           <div className="mb-6 flex items-center justify-between">
             <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Your Library</h2>
-            <button
-              onClick={handleImportClick}
-              disabled={isImporting}
-              className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              {isImporting ? (
-                <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  Importing...
-                </>
-              ) : (
-                <>
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  Import Book
-                </>
-              )}
-            </button>
+            <ImportDropdown
+              onFileImport={handleImportClick}
+              onUrlImport={() => setIsWebImportOpen(true)}
+              isImporting={isImporting}
+            />
             <input
               ref={fileInputRef}
               type="file"
@@ -272,6 +278,12 @@ export default function Home() {
               className="hidden"
             />
           </div>
+
+          <WebImportModal
+            isOpen={isWebImportOpen}
+            onClose={() => setIsWebImportOpen(false)}
+            onSave={handleWebImportSave}
+          />
 
           {books.length > 0 ? (
             <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">

@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^12.6.2",
     "dexie": "^4.3.0",
     "epubjs": "^0.3.93",
+    "linkedom": "^0.18.12",
     "next": "16.1.6",
     "pdfjs-dist": "^5.4.624",
     "react": "19.2.3",
