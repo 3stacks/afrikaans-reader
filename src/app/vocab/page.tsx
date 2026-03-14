@@ -348,14 +348,17 @@ export default function VocabPage() {
       setAnkiConnected(connected);
       if (connected) {
         const decks = await getDeckNames();
-        // Try to find a deck with "Afrikaans" in the name, or use first available
-        const afrikaansDeck = decks.find((d) =>
-          d.toLowerCase().includes("afrikaans")
-        );
-        if (afrikaansDeck) {
-          setAnkiDeck(afrikaansDeck);
-        } else if (decks.length > 0 && decks[0] !== "Default") {
-          setAnkiDeck(decks[0]);
+        // Only auto-select a deck if the user hasn't saved a preference
+        const savedDeck = localStorage.getItem("afrikaans-reader-anki-deck");
+        if (!savedDeck) {
+          const afrikaansDeck = decks.find((d) =>
+            d.toLowerCase().includes("afrikaans")
+          );
+          if (afrikaansDeck) {
+            setAnkiDeck(afrikaansDeck);
+          } else if (decks.length > 0 && decks[0] !== "Default") {
+            setAnkiDeck(decks[0]);
+          }
         }
       }
     } catch {
