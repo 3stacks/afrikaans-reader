@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 interface ActivityDay {
   date: string; // YYYY-MM-DD
@@ -18,13 +18,35 @@ interface ActivityHeatmapProps {
   };
 }
 
-const defaultColorScheme = {
+const darkColorScheme = {
   empty: '#1e293b',    // slate-800
   level1: '#166534',   // green-800
   level2: '#22c55e',   // green-500
   level3: '#4ade80',   // green-400
   level4: '#86efac',   // green-300
 };
+
+const lightColorScheme = {
+  empty: '#e2e8f0',    // slate-200
+  level1: '#bbf7d0',   // green-200
+  level2: '#4ade80',   // green-400
+  level3: '#22c55e',   // green-500
+  level4: '#16a34a',   // green-600
+};
+
+function useIsDark() {
+  const [isDark, setIsDark] = useState(true);
+  useEffect(() => {
+    const check = () => setIsDark(document.documentElement.classList.contains('dark'));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  return isDark;
+}
+
+const defaultColorScheme = darkColorScheme;
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -51,8 +73,10 @@ function getDayOfYear(date: Date): number {
 
 export default function ActivityHeatmap({
   data,
-  colorScheme = defaultColorScheme
+  colorScheme: colorSchemeProp,
 }: ActivityHeatmapProps) {
+  const isDark = useIsDark();
+  const colorScheme = colorSchemeProp || (isDark ? darkColorScheme : lightColorScheme);
   const { weeks, maxCount, monthLabels, totalActivity, activeDays } = useMemo(() => {
     // Create a map of date -> count
     const activityMap = new Map(data.map(d => [d.date, d.count]));
@@ -114,10 +138,10 @@ export default function ActivityHeatmap({
   }, [data]);
 
   return (
-    <div className="bg-slate-900 rounded-xl p-6">
+    <div className="bg-zinc-100 dark:bg-slate-900 rounded-xl p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white">Activity</h3>
-        <div className="text-sm text-slate-400">
+        <h3 className="text-lg font-semibold text-zinc-900 dark:text-white">Activity</h3>
+        <div className="text-sm text-zinc-500 dark:text-slate-400">
           {totalActivity.toLocaleString()} words in the last year
         </div>
       </div>
@@ -127,7 +151,7 @@ export default function ActivityHeatmap({
         {monthLabels.map((month, i) => (
           <div
             key={i}
-            className="text-xs text-slate-500"
+            className="text-xs text-zinc-400 dark:text-slate-500"
             style={{
               position: 'relative',
               left: `${month.weekIndex * 14}px`,
@@ -142,7 +166,7 @@ export default function ActivityHeatmap({
       {/* Heatmap grid */}
       <div className="flex">
         {/* Day of week labels */}
-        <div className="flex flex-col mr-2 text-xs text-slate-500">
+        <div className="flex flex-col mr-2 text-xs text-zinc-400 dark:text-slate-500">
           {DAYS_OF_WEEK.map((day, i) => (
             <div
               key={day}
@@ -161,7 +185,7 @@ export default function ActivityHeatmap({
               {week.map((day, dayIdx) => (
                 <div
                   key={day.date}
-                  className="w-[12px] h-[12px] rounded-sm transition-colors hover:ring-1 hover:ring-white/30"
+                  className="w-[12px] h-[12px] rounded-sm transition-colors hover:ring-1 hover:ring-black/20 dark:hover:ring-white/30"
                   style={{ backgroundColor: getColor(day.count, maxCount, colorScheme) }}
                   title={`${day.date}: ${day.count} words read`}
                 />
@@ -176,7 +200,7 @@ export default function ActivityHeatmap({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center justify-end mt-4 gap-2 text-xs text-slate-500">
+      <div className="flex items-center justify-end mt-4 gap-2 text-xs text-zinc-400 dark:text-slate-500">
         <span>Less</span>
         <div className="flex gap-[2px]">
           <div
@@ -204,14 +228,14 @@ export default function ActivityHeatmap({
       </div>
 
       {/* Stats row */}
-      <div className="flex gap-6 mt-4 pt-4 border-t border-slate-800">
+      <div className="flex gap-6 mt-4 pt-4 border-t border-zinc-200 dark:border-slate-800">
         <div className="text-sm">
-          <span className="text-slate-400">Active days: </span>
-          <span className="text-white font-medium">{activeDays}</span>
+          <span className="text-zinc-500 dark:text-slate-400">Active days: </span>
+          <span className="text-zinc-900 dark:text-white font-medium">{activeDays}</span>
         </div>
         <div className="text-sm">
-          <span className="text-slate-400">Avg per active day: </span>
-          <span className="text-white font-medium">
+          <span className="text-zinc-500 dark:text-slate-400">Avg per active day: </span>
+          <span className="text-zinc-900 dark:text-white font-medium">
             {activeDays > 0 ? Math.round(totalActivity / activeDays).toLocaleString() : 0}
           </span>
         </div>

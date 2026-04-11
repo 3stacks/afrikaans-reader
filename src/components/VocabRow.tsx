@@ -14,11 +14,17 @@ interface VocabRowProps {
 function StateIndicator({ state }: { state: WordState }) {
   switch (state) {
     case "new":
+      return (
+        <span
+          className="inline-block h-3 w-3 rounded-full bg-gray-400 dark:bg-gray-500"
+          title="New - Not yet studied"
+        />
+      );
     case "level1":
       return (
         <span
           className="inline-block h-3 w-3 rounded-full bg-blue-800"
-          title="Level 1 - New"
+          title="Level 1 - Just started learning"
         />
       );
     case "level2":
@@ -39,7 +45,7 @@ function StateIndicator({ state }: { state: WordState }) {
       return (
         <span
           className="inline-block h-3 w-3 rounded-full bg-blue-200"
-          title="Level 4 - Almost Known"
+          title="Level 4 - Almost known"
         />
       );
     case "known":
@@ -50,7 +56,10 @@ function StateIndicator({ state }: { state: WordState }) {
           viewBox="0 0 24 24"
           stroke="currentColor"
           strokeWidth={3}
+          role="img"
+          aria-label="Known"
         >
+          <title>Known - Fully learned</title>
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -62,7 +71,7 @@ function StateIndicator({ state }: { state: WordState }) {
       return (
         <span
           className="inline-block h-0.5 w-3 rounded bg-gray-400"
-          title="Ignored"
+          title="Ignored - Hidden from study"
         />
       );
     default:

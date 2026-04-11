@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import NavHeader from '@/components/NavHeader';
 import {
   getVocabStats,
   getAllBooks,
@@ -448,7 +449,8 @@ export default function StatsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 sm:ml-56">
+      <NavHeader />
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Date subtitle */}
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">

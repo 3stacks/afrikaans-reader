@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import ThemeToggle from './ThemeToggle';
 
 const navLinks = [
   { href: '/', label: 'Library' },
@@ -104,9 +105,9 @@ export default function NavHeader() {
           })}
         </nav>
 
-        {/* Bottom separator and spacer */}
-        <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-          <span className="text-xs text-zinc-400 dark:text-zinc-600">Learning Suite</span>
+        {/* Bottom: theme toggle */}
+        <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <ThemeToggle />
         </div>
       </aside>
 
