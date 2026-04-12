@@ -92,6 +92,10 @@ export async function addLessonToCollection(
   return id;
 }
 
+export async function deleteLesson(id: string): Promise<void> {
+  await fetch(`/api/lessons/${id}`, { method: 'DELETE' });
+}
+
 export async function updateLessonProgress(
   id: string,
   progress: { scrollPosition?: number; percentComplete?: number }

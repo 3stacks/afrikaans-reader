@@ -214,9 +214,9 @@ test.describe("Collections & Lessons", () => {
       page.getByRole("heading", { level: 1, name: "Toets Boek" })
     ).toBeVisible();
 
-    // Click delete and confirm
+    // Click the collection delete button (not lesson delete buttons)
     page.on("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
 
     // Should redirect to library
     await expect(page).toHaveURL("/", { timeout: 5000 });

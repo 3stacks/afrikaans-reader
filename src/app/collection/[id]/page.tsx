@@ -8,6 +8,7 @@ import {
   getCollection,
   getLessonsForCollection,
   deleteCollection,
+  deleteLesson,
   type Collection,
   type LessonSummary,
 } from '@/lib/data-layer';
@@ -49,6 +50,12 @@ export default function CollectionPage({
     if (!confirm('Delete this collection and all its lessons?')) return;
     await deleteCollection(id);
     router.push('/');
+  }
+
+  async function handleDeleteLesson(lessonId: string, title: string) {
+    if (!confirm(`Delete "${title}"?`)) return;
+    await deleteLesson(lessonId);
+    setLessons((prev) => prev.filter((l) => l.id !== lessonId));
   }
 
   function getContinueLesson(): LessonSummary | undefined {
@@ -125,51 +132,66 @@ export default function CollectionPage({
             const isComplete = progress >= 95;
 
             return (
-              <Link
+              <div
                 key={lesson.id}
-                href={`/read/${lesson.id}`}
-                className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white px-5 py-4 transition-all hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+                className="group flex items-center gap-4 rounded-xl border border-zinc-200 bg-white px-5 py-4 transition-all hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
               >
-                {/* Lesson number */}
-                <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-medium
-                  ${isComplete
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                  }`}>
-                  {isComplete ? (
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    i + 1
-                  )}
-                </div>
-
-                {/* Lesson info */}
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                    {lesson.title}
-                  </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {lesson.wordCount.toLocaleString()} words
-                    {progress > 0 && !isComplete && ` · ${progress}%`}
-                  </p>
-                </div>
-
-                {/* Progress bar */}
-                {progress > 0 && !isComplete && (
-                  <div className="w-20 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
-                    <div
-                      className="h-full rounded-full bg-zinc-400 dark:bg-zinc-500"
-                      style={{ width: `${progress}%` }}
-                    />
+                <Link
+                  href={`/read/${lesson.id}`}
+                  className="flex flex-1 items-center gap-4 min-w-0"
+                >
+                  {/* Lesson number */}
+                  <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-medium
+                    ${isComplete
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                    }`}>
+                    {isComplete ? (
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      i + 1
+                    )}
                   </div>
-                )}
 
-                <svg className="h-4 w-4 flex-shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+                  {/* Lesson info */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                      {lesson.title}
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {lesson.wordCount.toLocaleString()} words
+                      {progress > 0 && !isComplete && ` · ${progress}%`}
+                    </p>
+                  </div>
+
+                  {/* Progress bar */}
+                  {progress > 0 && !isComplete && (
+                    <div className="w-20 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
+                      <div
+                        className="h-full rounded-full bg-zinc-400 dark:bg-zinc-500"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  )}
+
+                  <svg className="h-4 w-4 flex-shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+
+                {/* Delete button */}
+                <button
+                  onClick={() => handleDeleteLesson(lesson.id, lesson.title)}
+                  className="flex-shrink-0 rounded-lg p-2 text-zinc-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                  title="Delete lesson"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             );
           })}
         </div>
