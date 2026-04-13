@@ -24,12 +24,12 @@ COPY api/src ./src
 COPY src/lib/sentence-bank.json ./src/lib/sentence-bank.json
 
 # ── Production stage ──
-FROM oven/bun:1-alpine AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install Node.js (needed for Next.js standalone server)
-RUN apk add --no-cache nodejs
+# Copy Bun binary from the official image
+COPY --from=oven/bun:1-alpine /usr/local/bin/bun /usr/local/bin/bun
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
