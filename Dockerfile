@@ -20,7 +20,8 @@ COPY api/package.json api/bun.lock* ./
 RUN bun install --production
 
 COPY api/src ./src
-# sentence-bank.json is imported by cloze route
+# Replace symlink with actual file (symlink points outside build context)
+RUN rm -f ./src/lib/sentence-bank.json
 COPY src/lib/sentence-bank.json ./src/lib/sentence-bank.json
 
 # ── Production stage ──
