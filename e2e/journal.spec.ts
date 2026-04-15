@@ -223,4 +223,69 @@ test.describe("Journal", () => {
       await page.request.delete(`/api/journal/${entry.id}`);
     }
   });
+
+  test("full journey: write, save draft, navigate away, return, submit for correction", async ({
+    page,
+  }) => {
+    const today = new Date().toISOString().split("T")[0];
+
+    // Clean up any existing today entry
+    const existing = await page.request.get(`/api/journal?date=${today}`);
+    const existingEntry = await existing.json();
+    if (existingEntry?.id) {
+      await page.request.delete(`/api/journal/${existingEntry.id}`);
+    }
+
+    // 1. Navigate to journal and write an entry
+    await page.goto("/journal");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.getByPlaceholder(/skryf vandag/i);
+    await textarea.fill("Gister ek het na die stoor gaan. Ek het koop baie dinge.");
+
+    // 2. Save as draft
+    await page.getByRole("button", { name: "Save Draft" }).click();
+    await expect(page.getByText("Draft saved")).toBeVisible({ timeout: 5000 });
+
+    // 3. Navigate away
+    await page.goto("/vocab");
+    await page.waitForLoadState("networkidle");
+
+    // 4. Return to journal — draft should still be there
+    await page.goto("/journal");
+    await page.waitForLoadState("networkidle");
+
+    const restoredTextarea = page.getByPlaceholder(/skryf vandag/i);
+    await expect(restoredTextarea).toHaveValue(
+      "Gister ek het na die stoor gaan. Ek het koop baie dinge."
+    );
+
+    // 5. Submit for correction
+    await page.getByRole("button", { name: "Submit for Correction" }).click();
+
+    // Should show loading state
+    await expect(
+      page.getByRole("button", { name: /correcting/i })
+    ).toBeVisible();
+
+    // Wait for correction to complete — textarea should be replaced by correction view
+    await expect(page.getByText("Your text")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText("Corrected")).toBeVisible();
+
+    // Should show at least one correction (the text has intentional errors)
+    await expect(page.getByText(/correction/i)).toBeVisible();
+
+    // Textarea should no longer be visible (entry is submitted)
+    await expect(restoredTextarea).not.toBeVisible();
+
+    // Verify via API
+    const apiRes = await page.request.get(`/api/journal?date=${today}`);
+    const entry = await apiRes.json();
+    expect(entry.status).toBe("submitted");
+    expect(entry.corrections.length).toBeGreaterThan(0);
+    expect(entry.correctedBody).toBeTruthy();
+
+    // Clean up
+    await page.request.delete(`/api/journal/${entry.id}`);
+  });
 });
