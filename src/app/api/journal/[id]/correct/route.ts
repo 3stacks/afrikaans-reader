@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { client } from '@/lib/server/anthropic';
+import { prompt } from '@/lib/server/anthropic';
 import { db, JournalEntryRow } from '@/lib/server/database';
 
 export async function POST(
@@ -18,7 +18,7 @@ export async function POST(
   }
 
   try {
-    const prompt = `You are an Afrikaans language tutor reviewing a student's journal entry. The student is an English speaker learning Afrikaans.
+    const promptText = `You are an Afrikaans language tutor reviewing a student's journal entry. The student is an English speaker learning Afrikaans.
 
 Correct the following Afrikaans text. For each error found, provide the correction and a brief explanation in English.
 
@@ -34,18 +34,8 @@ If the text is perfect, return an empty corrections array.
 Focus on: spelling errors, grammar (verb conjugation, tense, word order), word choice, missing or extra words, and idiomatic corrections.
 Keep explanations concise (1-2 sentences) and educational.`;
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = message.content[0];
-    if (content.type !== 'text') {
-      return NextResponse.json({ error: 'Unexpected response type' }, { status: 500 });
-    }
-
-    const result = JSON.parse(content.text);
+    const responseText = await prompt(promptText);
+    const result = JSON.parse(responseText);
     const now = new Date().toISOString();
 
     db.prepare(`
