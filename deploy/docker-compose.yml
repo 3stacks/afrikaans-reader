@@ -13,7 +13,7 @@ services:
     #         - capabilities: [gpu]
 
   lector:
-    image: ghcr.io/3stacks/lector:${LECTOR_VERSION:-latest}
+    image: ghcr.io/heuwels/lector:${LECTOR_VERSION:-latest}
     container_name: lector
     restart: unless-stopped
     depends_on:
