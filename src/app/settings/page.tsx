@@ -39,7 +39,7 @@ const SETTINGS_KEYS = {
 
 type CardType = "basic" | "cloze";
 type Theme = "light" | "dark" | "system";
-type LLMProvider = "ollama" | "anthropic";
+type LLMProvider = "ollama" | "anthropic" | "apfel";
 
 const OLLAMA_MODELS = [
   { value: "llama3.2:3b", label: "Llama 3.2 3B (fastest, lower quality)" },
@@ -101,6 +101,8 @@ export default function SettingsPage() {
   // LLM provider state
   const [llmProvider, setLlmProvider] = useState<LLMProvider>("ollama");
   const [ollamaModel, setOllamaModel] = useState("llama3.1:8b");
+  const [apfelUrl, setApfelUrl] = useState("http://localhost:11434");
+  const [apfelModel, setApfelModel] = useState("default");
   const [llmStatus, setLlmStatus] = useState<LLMStatus | null>(null);
   const [llmTesting, setLlmTesting] = useState(false);
 
@@ -150,10 +152,16 @@ export default function SettingsPage() {
 
     // Load LLM provider settings from server
     getSetting<string>('llmProvider').then((p) => {
-      if (p === 'ollama' || p === 'anthropic') setLlmProvider(p);
+      if (p === 'ollama' || p === 'anthropic' || p === 'apfel') setLlmProvider(p);
     });
     getSetting<string>('ollamaModel').then((m) => {
       if (m) setOllamaModel(m);
+    });
+    getSetting<string>('apfelUrl').then((u) => {
+      if (u) setApfelUrl(u);
+    });
+    getSetting<string>('apfelModel').then((m) => {
+      if (m) setApfelModel(m);
     });
 
     // Check LLM status
@@ -254,6 +262,20 @@ export default function SettingsPage() {
   const saveOllamaModel = async (model: string) => {
     setOllamaModel(model);
     await setSetting('ollamaModel', model);
+    await fetch('/api/llm-status/reset', { method: 'POST' });
+    fetch('/api/llm-status').then(r => r.json()).then(setLlmStatus).catch(() => {});
+  };
+
+  const saveApfelUrl = async (url: string) => {
+    setApfelUrl(url);
+    await setSetting('apfelUrl', url);
+    await fetch('/api/llm-status/reset', { method: 'POST' });
+    fetch('/api/llm-status').then(r => r.json()).then(setLlmStatus).catch(() => {});
+  };
+
+  const saveApfelModel = async (model: string) => {
+    setApfelModel(model);
+    await setSetting('apfelModel', model);
     await fetch('/api/llm-status/reset', { method: 'POST' });
     fetch('/api/llm-status').then(r => r.json()).then(setLlmStatus).catch(() => {});
   };
@@ -621,7 +643,7 @@ export default function SettingsPage() {
               )}
             </div>
             <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-              Choose how translations are powered. Ollama runs locally (no API key needed). Anthropic uses cloud AI for higher quality.
+              Choose how translations are powered. Ollama runs locally (no API key needed). Anthropic uses cloud AI for higher quality. Apfel is an OpenAI-compatible API you can self-host.
             </p>
 
             {/* Provider selector */}
@@ -636,6 +658,7 @@ export default function SettingsPage() {
               >
                 <option value="ollama">Ollama (local)</option>
                 <option value="anthropic">Anthropic (cloud)</option>
+                <option value="apfel">Apfel (self-hosted)</option>
               </select>
             </div>
 
@@ -696,6 +719,42 @@ export default function SettingsPage() {
                   >
                     {showApiKey ? "Hide" : "Show"}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Apfel settings */}
+            {llmProvider === "apfel" && (
+              <div className="mb-4 space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Server URL
+                  </label>
+                  <input
+                    type="text"
+                    value={apfelUrl}
+                    onChange={(e) => saveApfelUrl(e.target.value)}
+                    placeholder="http://localhost:11434"
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                  />
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                    The URL of your Apfel instance (OpenAI-compatible API)
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Model
+                  </label>
+                  <input
+                    type="text"
+                    value={apfelModel}
+                    onChange={(e) => saveApfelModel(e.target.value)}
+                    placeholder="default"
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                  />
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                    The model name configured on your Apfel server
+                  </p>
                 </div>
               </div>
             )}
