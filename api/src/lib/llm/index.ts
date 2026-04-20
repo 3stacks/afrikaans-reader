@@ -1,6 +1,7 @@
 import type { LLMProvider } from './types';
 import { OllamaProvider } from './ollama';
 import { AnthropicProvider } from './anthropic';
+import { ApfelProvider } from './apfel';
 import { db } from '../../db';
 
 export type { LLMProvider, ChatMessage, CompletionOptions } from './types';
@@ -20,11 +21,19 @@ function getSetting(key: string): string | null {
 
 export function getProvider(): LLMProvider {
   const name = getSetting('llmProvider') || process.env.LLM_PROVIDER || 'anthropic';
-  const model = name === 'ollama'
-    ? (getSetting('ollamaModel') || process.env.OLLAMA_MODEL || undefined)
-    : (process.env.ANTHROPIC_MODEL || undefined);
 
-  const cacheKey = `${name}:${model || 'default'}`;
+  let model: string | undefined;
+  let url: string | undefined;
+  if (name === 'ollama') {
+    model = getSetting('ollamaModel') || process.env.OLLAMA_MODEL || undefined;
+  } else if (name === 'apfel') {
+    model = getSetting('apfelModel') || process.env.APFEL_MODEL || undefined;
+    url = getSetting('apfelUrl') || process.env.APFEL_URL || undefined;
+  } else {
+    model = process.env.ANTHROPIC_MODEL || undefined;
+  }
+
+  const cacheKey = `${name}:${model || 'default'}:${url || 'default'}`;
 
   if (cachedProvider && cachedProviderKey === cacheKey) {
     return cachedProvider;
@@ -33,6 +42,9 @@ export function getProvider(): LLMProvider {
   switch (name) {
     case 'anthropic':
       cachedProvider = new AnthropicProvider(undefined, model);
+      break;
+    case 'apfel':
+      cachedProvider = new ApfelProvider(url, model);
       break;
     case 'ollama':
     default:
