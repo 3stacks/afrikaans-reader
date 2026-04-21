@@ -392,7 +392,7 @@ export default function JournalPage() {
               <textarea
                 value={bodyText}
                 onChange={(e) => handleBodyChange(e.target.value)}
-                placeholder="Skryf vandag se joernaal inskrywing in Afrikaans..."
+                placeholder="Write today's journal entry in your target language..."
                 className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 text-sm leading-relaxed text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[160px]"
                 disabled={isSubmitting}
                 autoFocus

@@ -216,7 +216,7 @@ export default function WebImportModal({ isOpen, onClose, onSave }: WebImportMod
               )}
 
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Paste a URL to an Afrikaans news article or blog post. The article content will be extracted and added to your library.
+                Paste a URL to a news article or blog post. The article content will be extracted and added to your library.
               </p>
             </div>
           )}

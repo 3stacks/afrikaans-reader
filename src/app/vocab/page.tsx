@@ -307,7 +307,7 @@ export default function VocabPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<VocabEntry | null>(null);
   const [ankiConnected, setAnkiConnected] = useState<boolean | null>(null);
-  const [ankiDeck, setAnkiDeck] = useState("Afrikaans");
+  const [ankiDeck, setAnkiDeck] = useState("Lector");
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     message: string;

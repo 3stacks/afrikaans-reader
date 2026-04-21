@@ -1,14 +1,10 @@
-// Text-to-Speech wrapper for Afrikaans
+// Text-to-Speech wrapper — language-aware
 // Uses Google Cloud TTS when available, falls back to browser TTS
+
+import { type LanguageCode, LANGUAGES, DEFAULT_LANGUAGE } from './languages';
 
 // Default speech rate (1.0 is normal speed)
 const DEFAULT_RATE = 0.9;
-
-// Afrikaans language code
-const AFRIKAANS_LANG = "af-ZA";
-
-// Fallback languages if Afrikaans is not available
-const FALLBACK_LANGS = ["af", "nl-NL", "nl"]; // Dutch is somewhat similar
 
 // Preferred voice name patterns (higher quality voices)
 const PREFERRED_VOICE_PATTERNS = [
@@ -63,11 +59,26 @@ export function setTTSMode(mode: TTSMode): void {
   localStorage.setItem(TTS_MODE_KEY, mode);
 }
 
+/** Get the current target language code from settings */
+function getTargetLanguage(): LanguageCode {
+  if (typeof window === "undefined") return DEFAULT_LANGUAGE;
+  const stored = localStorage.getItem('lector-target-language');
+  if (stored && stored in LANGUAGES) return stored as LanguageCode;
+  return DEFAULT_LANGUAGE;
+}
+
+/** Get the language config for browser TTS */
+function getTTSLanguageConfig() {
+  const code = getTargetLanguage();
+  return LANGUAGES[code];
+}
+
 /**
  * Score a voice based on quality indicators
  * Higher score = better quality
  */
 function scoreVoice(voice: SpeechSynthesisVoice): number {
+  const langConfig = getTTSLanguageConfig();
   let score = 0;
 
   // Prefer local/offline voices (usually higher quality)
@@ -90,18 +101,18 @@ function scoreVoice(voice: SpeechSynthesisVoice): number {
   }
 
   // Prefer exact language match
-  if (voice.lang === AFRIKAANS_LANG) score += 3;
-  if (voice.lang.startsWith("af")) score += 2;
+  if (voice.lang === langConfig.ttsCode) score += 3;
+  if (voice.lang.startsWith(langConfig.code)) score += 2;
 
   return score;
 }
 
 /**
- * Get the best available voice for Afrikaans (browser TTS)
+ * Get the best available voice for the target language (browser TTS)
  * Caches the result for consistent voice selection
  * @returns The voice to use, or undefined if none found
  */
-function getAfrikaansVoice(): SpeechSynthesisVoice | undefined {
+function getTargetVoice(): SpeechSynthesisVoice | undefined {
   if (!isTTSAvailable()) {
     return undefined;
   }
@@ -127,8 +138,9 @@ function getAfrikaansVoice(): SpeechSynthesisVoice | undefined {
     }
   }
 
-  // Find all candidate voices (Afrikaans or Dutch)
-  const allLangs = [AFRIKAANS_LANG, "af", ...FALLBACK_LANGS];
+  // Find all candidate voices for the target language
+  const langConfig = getTTSLanguageConfig();
+  const allLangs = [langConfig.ttsCode, langConfig.code, ...langConfig.fallbackTts];
   const candidateVoices = voices.filter(v =>
     allLangs.some(lang => v.lang === lang || v.lang.startsWith(lang.split("-")[0]))
   );
@@ -224,14 +236,14 @@ function speakWithBrowser(text: string, rate: number): void {
 
   const utterance = new SpeechSynthesisUtterance(text);
 
-  // Set the voice (try Afrikaans, fall back to Dutch)
-  const voice = getAfrikaansVoice();
+  // Set the voice for the target language
+  const voice = getTargetVoice();
   if (voice) {
     utterance.voice = voice;
     utterance.lang = voice.lang;
   } else {
     // Set language even without a specific voice
-    utterance.lang = AFRIKAANS_LANG;
+    utterance.lang = getTTSLanguageConfig().ttsCode;
   }
 
   // Set speech parameters
@@ -280,7 +292,7 @@ export function stopSpeaking(): void {
 }
 
 /**
- * Get available voices for Afrikaans or Dutch (browser TTS)
+ * Get available voices for the target language (browser TTS)
  * Useful for debugging or letting users choose a voice
  * @returns Array of available voices
  */
@@ -289,8 +301,9 @@ export function getAvailableVoices(): SpeechSynthesisVoice[] {
     return [];
   }
 
+  const langConfig = getTTSLanguageConfig();
   const voices = window.speechSynthesis.getVoices();
-  const relevantLangs = [AFRIKAANS_LANG, ...FALLBACK_LANGS];
+  const relevantLangs = [langConfig.ttsCode, ...langConfig.fallbackTts];
 
   return voices.filter((v) =>
     relevantLangs.some(
@@ -315,7 +328,7 @@ export function waitForVoices(): Promise<SpeechSynthesisVoice[]> {
       const voices = window.speechSynthesis.getVoices();
       // Pre-initialize the voice cache
       if (voices.length > 0 && !voiceInitialized) {
-        getAfrikaansVoice();
+        getTargetVoice();
       }
       resolve(voices);
     };

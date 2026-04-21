@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { getActiveLanguageConfig } from '../lib/active-language';
+import { isValidLanguageCode, LANGUAGES } from '../lib/languages';
 
 interface TatoebaApiSentence {
   id: number;
@@ -34,9 +36,12 @@ const app = new Hono();
 app.get('/', async (c) => {
   const limit = c.req.query('limit') || '20';
   const query = c.req.query('query');
+  const reqLang = c.req.query('language');
+
+  const langConfig = reqLang && isValidLanguageCode(reqLang) ? LANGUAGES[reqLang] : getActiveLanguageConfig();
 
   const params = new URLSearchParams({
-    from: 'afr',
+    from: langConfig.tatoebaCode,
     to: 'eng',
     sort: query ? 'relevance' : 'random',
     limit: Math.min(parseInt(limit), 100).toString(),

@@ -1,18 +1,18 @@
-// Tatoeba API client for fetching Afrikaans sentences with translations
+// Tatoeba API client for fetching sentences with translations
 
 import { lookupWord } from './dictionary';
 import { ClozeCollection } from './db';
+import { LANGUAGES, DEFAULT_LANGUAGE, type LanguageCode } from './languages';
 
 // Use local API route to avoid CORS issues
 const API_URL = "/api/tatoeba";
 
-// Common words to avoid using as cloze targets
-const AVOID_WORDS = new Set([
-  "'n", "die", "en", "of", "in", "op", "vir", "met", "na", "van",
-  "is", "het", "om", "te", "dat", "wat", "as", "aan", "by", "sy", "hy",
-  "nie", "ek", "jy", "ons", "hulle", "dit", "was", "sal", "kan", "moet",
-  "maar", "ook", "al", "nog", "so", "toe", "nou", "net", "eers", "dan",
-]);
+function getAvoidWords(): Set<string> {
+  if (typeof window === 'undefined') return LANGUAGES[DEFAULT_LANGUAGE].avoidWords;
+  const stored = localStorage.getItem('lector-target-language');
+  const code = (stored && stored in LANGUAGES ? stored : DEFAULT_LANGUAGE) as LanguageCode;
+  return LANGUAGES[code].avoidWords;
+}
 
 // Types
 export interface TatoebaSentence {
@@ -71,7 +71,7 @@ export function findBestClozeWord(sentence: string): { word: string; index: numb
     const cleanWord = words[i].replace(/[.,!?;:'"()[\]{}]/g, '').toLowerCase();
 
     // Skip short words and common words
-    if (cleanWord.length < 3 || AVOID_WORDS.has(cleanWord)) continue;
+    if (cleanWord.length < 3 || getAvoidWords().has(cleanWord)) continue;
 
     // Look up in dictionary
     const entry = lookupWord(cleanWord);

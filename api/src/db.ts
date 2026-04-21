@@ -6,7 +6,8 @@ import { parseEpub } from './lib/epub-parser';
 import { htmlToMarkdown, countWords } from './lib/html-to-markdown';
 
 const DATA_DIR = process.env.DATA_DIR || '../data';
-const DB_PATH = path.join(DATA_DIR, 'afrikaans.db');
+const DB_PATH = path.join(DATA_DIR, 'lector.db');
+const LEGACY_DB_PATH = path.join(DATA_DIR, 'afrikaans.db');
 export const BOOKS_DIR = path.join(DATA_DIR, 'books');
 
 let _db: Database | null = null;
@@ -16,6 +17,11 @@ function getDb(): Database {
 
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(BOOKS_DIR, { recursive: true });
+
+  // Migrate legacy DB filename
+  if (!fs.existsSync(DB_PATH) && fs.existsSync(LEGACY_DB_PATH)) {
+    fs.renameSync(LEGACY_DB_PATH, DB_PATH);
+  }
 
   _db = new Database(DB_PATH);
   _db.exec('PRAGMA journal_mode = WAL');
@@ -136,6 +142,7 @@ function getDb(): Database {
 
   migrateVocabForeignKey(_db);
   migrateBooks(_db);
+  migrateAddLanguageColumn(_db);
 
   return _db;
 }
@@ -268,6 +275,52 @@ function migrateBooks(database: Database) {
   })();
 }
 
+/**
+ * Add language column to all content tables.
+ * Existing data gets tagged as 'af' (Afrikaans).
+ * knownWords needs table recreation for compound PK (word, language).
+ */
+function migrateAddLanguageColumn(database: Database) {
+  // journal_entries only exists in the Next.js server DB, not the sidecar
+  const tables = ['collections', 'lessons', 'vocab', 'clozeSentences'];
+
+  for (const table of tables) {
+    const cols = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some(c => c.name === 'language')) {
+      database.exec(`ALTER TABLE ${table} ADD COLUMN language TEXT NOT NULL DEFAULT 'af'`);
+    }
+  }
+
+  // knownWords: needs compound PK (word, language) — recreate table
+  const kwCreate = database.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='knownWords'"
+  ).get() as { sql: string } | undefined;
+
+  if (kwCreate && !kwCreate.sql.includes('language')) {
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE knownWords_new (
+          word TEXT NOT NULL,
+          language TEXT NOT NULL DEFAULT 'af',
+          state TEXT NOT NULL CHECK (state IN ('new', 'level1', 'level2', 'level3', 'level4', 'known', 'ignored')),
+          PRIMARY KEY (word, language)
+        );
+        INSERT INTO knownWords_new (word, language, state) SELECT word, 'af', state FROM knownWords;
+        DROP TABLE knownWords;
+        ALTER TABLE knownWords_new RENAME TO knownWords;
+      `);
+    })();
+  }
+
+  // Add language indexes
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_collections_language ON collections(language);
+    CREATE INDEX IF NOT EXISTS idx_lessons_language ON lessons(language);
+    CREATE INDEX IF NOT EXISTS idx_vocab_language ON vocab(language);
+    CREATE INDEX IF NOT EXISTS idx_cloze_language ON clozeSentences(language);
+  `);
+}
+
 // Export a lazy-init proxy
 export const db = new Proxy({} as Database, {
   get(_target, prop) {
@@ -327,6 +380,7 @@ export interface VocabRow {
 
 export interface KnownWordRow {
   word: string;
+  language: string;
   state: WordState;
 }
 

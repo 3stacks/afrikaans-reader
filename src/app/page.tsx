@@ -263,7 +263,7 @@ function EmptyState({ onImport }: { onImport: () => void }) {
         No books in your library
       </h3>
       <p className="mb-6 max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
-        Import an Afrikaans book (EPUB or Markdown) to start learning. Your vocabulary and progress will be
+        Import a book (EPUB or Markdown) to start learning. Your vocabulary and progress will be
         tracked as you read.
       </p>
       <button

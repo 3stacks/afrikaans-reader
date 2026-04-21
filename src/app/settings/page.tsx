@@ -5,6 +5,7 @@ import Link from "next/link";
 import NavHeader from "@/components/NavHeader";
 import { getDeckNames, isAnkiConnected } from "@/lib/anki";
 import { getTTSMode, setTTSMode, isGoogleTTSConfigured, speak, type TTSMode } from "@/lib/tts";
+import { LANGUAGES, type LanguageCode, DEFAULT_LANGUAGE } from "@/lib/languages";
 import {
   exportAllData,
   clearAllData,
@@ -68,8 +69,8 @@ interface AppSettings {
 const defaultSettings: AppSettings = {
   apiKey: "",
   googleApiKey: "",
-  ankiDeckName: "Afrikaans",
-  ankiClozeDeckName: "Afrikaans::Cloze",
+  ankiDeckName: "Lector",
+  ankiClozeDeckName: "Lector::Cloze",
   defaultCardType: "basic",
   ttsSpeed: 1.0,
   ttsMode: "google",
@@ -113,6 +114,9 @@ export default function SettingsPage() {
   const [googleTTSAvailable, setGoogleTTSAvailable] = useState<boolean | null>(null);
   const [showGoogleApiKey, setShowGoogleApiKey] = useState(false);
 
+  // Language state
+  const [activeLanguage, setActiveLanguage] = useState<LanguageCode>(DEFAULT_LANGUAGE);
+
   // API Token state
   const [apiTokens, setApiTokens] = useState<ApiTokenMeta[]>([]);
   const [showTokenForm, setShowTokenForm] = useState(false);
@@ -128,9 +132,9 @@ export default function SettingsPage() {
       apiKey: localStorage.getItem(SETTINGS_KEYS.ANTHROPIC_API_KEY) || "",
       googleApiKey: localStorage.getItem(SETTINGS_KEYS.GOOGLE_CLOUD_API_KEY) || "",
       ankiDeckName:
-        localStorage.getItem(SETTINGS_KEYS.ANKI_DECK_NAME) || "Afrikaans",
+        localStorage.getItem(SETTINGS_KEYS.ANKI_DECK_NAME) || "Lector",
       ankiClozeDeckName:
-        localStorage.getItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME) || "Afrikaans::Cloze",
+        localStorage.getItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME) || "Lector::Cloze",
       defaultCardType:
         (localStorage.getItem(SETTINGS_KEYS.DEFAULT_CARD_TYPE) as CardType) ||
         "basic",
@@ -178,7 +182,21 @@ export default function SettingsPage() {
 
     // Load API tokens
     getApiTokens().then(setApiTokens).catch(() => {});
+
+    // Load active language
+    getSetting<string>('targetLanguage').then((lang) => {
+      if (lang && lang in LANGUAGES) setActiveLanguage(lang as LanguageCode);
+    });
   }, []);
+
+  // Switch language
+  const switchLanguage = async (code: LanguageCode) => {
+    setActiveLanguage(code);
+    await setSetting('targetLanguage', code);
+    localStorage.setItem('lector-target-language', code);
+    // Reset TTS voice cache when switching languages
+    localStorage.removeItem('lector-tts-voice');
+  };
 
   // Check Anki connection
   const checkAnkiConnection = useCallback(async () => {
@@ -504,7 +522,7 @@ export default function SettingsPage() {
         ),
       ].join("\n");
 
-      downloadFile(csv, "afrikaans-vocab.csv", "text/csv");
+      downloadFile(csv, "lector-vocab.csv", "text/csv");
       setExportStatus("Vocab exported as CSV.");
     } catch (error) {
       setExportStatus(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -516,7 +534,7 @@ export default function SettingsPage() {
     try {
       const vocab = await getAllVocab();
       const json = JSON.stringify(vocab, null, 2);
-      downloadFile(json, "afrikaans-vocab.json", "application/json");
+      downloadFile(json, "lector-vocab.json", "application/json");
       setExportStatus("Vocab exported as JSON.");
     } catch (error) {
       setExportStatus(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -531,7 +549,7 @@ export default function SettingsPage() {
         .filter((w) => w.state === "known")
         .map((w) => w.word);
       const text = words.join("\n");
-      downloadFile(text, "afrikaans-known-words.txt", "text/plain");
+      downloadFile(text, "lector-known-words.txt", "text/plain");
       setExportStatus(`Exported ${words.length} known words.`);
     } catch (error) {
       setExportStatus(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -646,6 +664,39 @@ export default function SettingsPage() {
 
       <main className="mx-auto max-w-3xl px-4 py-8">
         <div className="space-y-8">
+          {/* Language Section */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              Language
+            </h2>
+            <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+              Choose the language you are learning. All content is filtered by the active language.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {(Object.entries(LANGUAGES) as [LanguageCode, typeof LANGUAGES[LanguageCode]][]).map(
+                ([code, config]) => (
+                  <button
+                    key={code}
+                    onClick={() => switchLanguage(code)}
+                    className={`flex flex-col items-center gap-1.5 rounded-lg border-2 px-4 py-4 text-sm font-medium transition-all ${
+                      activeLanguage === code
+                        ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                        : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    <span className="text-xl">
+                      {code === "af" ? "\u{1F1FF}\u{1F1E6}" : code === "de" ? "\u{1F1E9}\u{1F1EA}" : "\u{1F1EA}\u{1F1F8}"}
+                    </span>
+                    <span>{config.native}</span>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {config.name}
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+          </section>
+
           {/* AI Provider Section */}
           <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="mb-4 flex items-center justify-between">
@@ -991,7 +1042,7 @@ export default function SettingsPage() {
                 Google Cloud API Key
               </label>
               <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-500">
-                For high-quality Afrikaans pronunciation. Get a key from{" "}
+                For high-quality pronunciation. Get a key from{" "}
                 <a
                   href="https://console.cloud.google.com/apis/credentials"
                   target="_blank"
@@ -1060,7 +1111,11 @@ export default function SettingsPage() {
             {/* Test TTS */}
             <div className="mb-4">
               <button
-                onClick={() => speak("Hallo, hoe gaan dit met jou?", settings.ttsSpeed)}
+                onClick={() => {
+                  const lang = (localStorage.getItem('lector-target-language') || DEFAULT_LANGUAGE) as LanguageCode;
+                  const config = LANGUAGES[lang] || LANGUAGES[DEFAULT_LANGUAGE];
+                  speak(config.testPhrase, settings.ttsSpeed);
+                }}
                 className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
               >
                 Test Voice

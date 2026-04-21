@@ -2,19 +2,22 @@ import { Hono } from 'hono';
 import { db, CollectionRow, LessonRow } from '../db';
 import { randomUUID } from 'crypto';
 import { countWords } from '../lib/html-to-markdown';
+import { resolveLanguage } from '../lib/active-language';
 
 const app = new Hono();
 
 // GET /api/collections
 app.get('/', (c) => {
+  const language = resolveLanguage(c.req.query('language'));
   const collections = db.prepare(`
     SELECT c.*, COUNT(l.id) as lessonCount,
       COALESCE(AVG(l.progress_percentComplete), 0) as avgProgress
     FROM collections c
     LEFT JOIN lessons l ON l.collectionId = c.id
+    WHERE c.language = ?
     GROUP BY c.id
     ORDER BY c.lastReadAt DESC
-  `).all() as (CollectionRow & { lessonCount: number; avgProgress: number })[];
+  `).all(language) as (CollectionRow & { lessonCount: number; avgProgress: number })[];
 
   return c.json(collections);
 });
@@ -24,11 +27,12 @@ app.post('/', async (c) => {
   const body = await c.req.json();
   const id = body.id || randomUUID();
   const now = new Date().toISOString();
+  const language = resolveLanguage(body.language);
 
   db.prepare(`
-    INSERT INTO collections (id, title, author, coverUrl, createdAt, lastReadAt)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, body.title, body.author || 'Unknown', body.coverUrl || null, now, now);
+    INSERT INTO collections (id, title, author, coverUrl, createdAt, lastReadAt, language)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, body.title, body.author || 'Unknown', body.coverUrl || null, now, now, language);
 
   return c.json({ id });
 });
@@ -102,6 +106,10 @@ app.post('/:id/lessons', async (c) => {
   const id = body.id || randomUUID();
   const now = new Date().toISOString();
 
+  // Inherit language from parent collection
+  const collection = db.prepare('SELECT language FROM collections WHERE id = ?').get(collectionId) as { language: string } | undefined;
+  const language = collection?.language || resolveLanguage(body.language);
+
   const maxOrder = db.prepare(
     'SELECT COALESCE(MAX(sortOrder), -1) as maxOrder FROM lessons WHERE collectionId = ?'
   ).get(collectionId) as { maxOrder: number };
@@ -109,9 +117,9 @@ app.post('/:id/lessons', async (c) => {
   const textContent = body.textContent || '';
 
   db.prepare(`
-    INSERT INTO lessons (id, collectionId, title, sortOrder, textContent, wordCount, createdAt, lastReadAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, collectionId, body.title, maxOrder.maxOrder + 1, textContent, countWords(textContent), now, now);
+    INSERT INTO lessons (id, collectionId, title, sortOrder, textContent, wordCount, createdAt, lastReadAt, language)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, collectionId, body.title, maxOrder.maxOrder + 1, textContent, countWords(textContent), now, now, language);
 
   db.prepare('UPDATE collections SET lastReadAt = ? WHERE id = ?').run(now, collectionId);
 

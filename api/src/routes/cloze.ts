@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db, ClozeSentenceRow, ClozeMasteryLevel } from '../db';
 import { randomUUID } from 'crypto';
 import sentenceBank from '../lib/sentence-bank.json';
+import { resolveLanguage } from '../lib/active-language';
 
 type BankEntry = {
   id: number;
@@ -20,9 +21,10 @@ app.get('/', (c) => {
   const collection = c.req.query('collection');
   const word = c.req.query('word');
   const limit = parseInt(c.req.query('limit') || '100');
+  const language = resolveLanguage(c.req.query('language'));
 
-  let query = 'SELECT * FROM clozeSentences WHERE (blacklisted = 0 OR blacklisted IS NULL)';
-  const params: unknown[] = [];
+  let query = 'SELECT * FROM clozeSentences WHERE (blacklisted = 0 OR blacklisted IS NULL) AND language = ?';
+  const params: unknown[] = [language];
 
   if (collection) { query += ' AND collection = ?'; params.push(collection); }
   if (word) { query += ' AND clozeWord = ?'; params.push(word); }
@@ -44,9 +46,10 @@ app.post('/', async (c) => {
   const body = await c.req.json();
 
   if (Array.isArray(body)) {
+    const language = resolveLanguage((body[0] as Record<string, unknown>)?.language as string);
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, vocabEntryId, masteryLevel, nextReview, reviewCount, lastReviewed, timesCorrect, timesIncorrect)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, vocabEntryId, masteryLevel, nextReview, reviewCount, lastReviewed, timesCorrect, timesIncorrect, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     db.transaction(() => {
@@ -57,7 +60,7 @@ app.post('/', async (c) => {
           item.wordRank || null, item.tatoebaSentenceId || null, item.vocabEntryId || null,
           item.masteryLevel || 0, item.nextReview || new Date().toISOString(),
           item.reviewCount || 0, item.lastReviewed || null,
-          item.timesCorrect || 0, item.timesIncorrect || 0
+          item.timesCorrect || 0, item.timesIncorrect || 0, language
         );
       }
     })();
@@ -66,16 +69,17 @@ app.post('/', async (c) => {
   }
 
   const id = body.id || randomUUID();
+  const language = resolveLanguage(body.language);
 
   db.prepare(`
-    INSERT INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, vocabEntryId, masteryLevel, nextReview, reviewCount, lastReviewed, timesCorrect, timesIncorrect)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, vocabEntryId, masteryLevel, nextReview, reviewCount, lastReviewed, timesCorrect, timesIncorrect, language)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, body.sentence, body.clozeWord, body.clozeIndex, body.translation,
     body.source || 'tatoeba', body.collection || 'random', body.wordRank || null,
     body.tatoebaSentenceId || null, body.vocabEntryId || null, body.masteryLevel || 0,
     body.nextReview || new Date().toISOString(), body.reviewCount || 0,
-    body.lastReviewed || null, body.timesCorrect || 0, body.timesIncorrect || 0
+    body.lastReviewed || null, body.timesCorrect || 0, body.timesIncorrect || 0, language
   );
 
   return c.json({ id });
@@ -87,19 +91,21 @@ app.get('/due', (c) => {
   const collection = c.req.query('collection');
   const mode = c.req.query('mode');
   const excludeWords = c.req.query('excludeWords')?.split(',').filter(Boolean) || [];
+  const language = resolveLanguage(c.req.query('language'));
 
   const now = new Date().toISOString();
   let query: string;
   const params: unknown[] = [];
 
   if (mode === 'new') {
-    query = 'SELECT * FROM clozeSentences WHERE reviewCount = 0 AND (blacklisted = 0 OR blacklisted IS NULL)';
+    query = 'SELECT * FROM clozeSentences WHERE reviewCount = 0 AND (blacklisted = 0 OR blacklisted IS NULL) AND language = ?';
+    params.push(language);
   } else if (mode === 'review') {
-    query = 'SELECT * FROM clozeSentences WHERE nextReview <= ? AND reviewCount > 0 AND masteryLevel < 100 AND (blacklisted = 0 OR blacklisted IS NULL)';
-    params.push(now);
+    query = 'SELECT * FROM clozeSentences WHERE nextReview <= ? AND reviewCount > 0 AND masteryLevel < 100 AND (blacklisted = 0 OR blacklisted IS NULL) AND language = ?';
+    params.push(now, language);
   } else {
-    query = 'SELECT * FROM clozeSentences WHERE nextReview <= ? AND (blacklisted = 0 OR blacklisted IS NULL)';
-    params.push(now);
+    query = 'SELECT * FROM clozeSentences WHERE nextReview <= ? AND (blacklisted = 0 OR blacklisted IS NULL) AND language = ?';
+    params.push(now, language);
   }
 
   if (collection) { query += ' AND collection = ?'; params.push(collection); }
@@ -125,6 +131,7 @@ app.get('/due', (c) => {
 // GET /api/cloze/counts
 app.get('/counts', (c) => {
   const now = new Date().toISOString();
+  const language = resolveLanguage(c.req.query('language'));
 
   const rows = db.prepare(`
     SELECT
@@ -133,9 +140,9 @@ app.get('/counts', (c) => {
       SUM(CASE WHEN masteryLevel = 100 THEN 1 ELSE 0 END) as mastered,
       SUM(CASE WHEN nextReview <= ? AND masteryLevel < 100 AND reviewCount > 0 THEN 1 ELSE 0 END) as due
     FROM clozeSentences
-    WHERE blacklisted = 0 OR blacklisted IS NULL
+    WHERE (blacklisted = 0 OR blacklisted IS NULL) AND language = ?
     GROUP BY collection
-  `).all(now) as { collection: string; total: number; mastered: number; due: number }[];
+  `).all(now, language) as { collection: string; total: number; mastered: number; due: number }[];
 
   const counts: Record<string, { total: number; due: number; mastered: number }> = {
     top500: { total: 0, due: 0, mastered: 0 },
@@ -157,10 +164,11 @@ app.get('/counts', (c) => {
 // POST /api/cloze/seed
 app.post('/seed', (c) => {
   const bank = sentenceBank as BankEntry[];
+  const language = resolveLanguage();
 
   const existing = db.prepare(
-    'SELECT id, tatoebaSentenceId, clozeWord, collection, reviewCount FROM clozeSentences WHERE tatoebaSentenceId IS NOT NULL'
-  ).all() as { id: string; tatoebaSentenceId: number; clozeWord: string; collection: string; reviewCount: number }[];
+    'SELECT id, tatoebaSentenceId, clozeWord, collection, reviewCount FROM clozeSentences WHERE tatoebaSentenceId IS NOT NULL AND language = ?'
+  ).all(language) as { id: string; tatoebaSentenceId: number; clozeWord: string; collection: string; reviewCount: number }[];
 
   const existingMap = new Map(existing.map(r => [r.tatoebaSentenceId, r]));
 
@@ -177,8 +185,8 @@ app.post('/seed', (c) => {
   }
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, masteryLevel, nextReview, reviewCount, timesCorrect, timesIncorrect)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, masteryLevel, nextReview, reviewCount, timesCorrect, timesIncorrect, language)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const updateStmt = db.prepare(`
@@ -190,7 +198,7 @@ app.post('/seed', (c) => {
       insertStmt.run(
         randomUUID(), s.text, s.clozeWord, s.clozeIndex, s.translation,
         'tatoeba', s.collection, s.wordRank, s.id,
-        0, new Date().toISOString(), 0, 0, 0
+        0, new Date().toISOString(), 0, 0, 0, language
       );
     }
     for (const s of toUpdate) {
@@ -203,9 +211,10 @@ app.post('/seed', (c) => {
 
 // GET /api/cloze/seed
 app.get('/seed', (c) => {
+  const language = resolveLanguage(c.req.query('language'));
   const count = db.prepare(
-    'SELECT COUNT(*) as count FROM clozeSentences WHERE (blacklisted = 0 OR blacklisted IS NULL)'
-  ).get() as { count: number };
+    'SELECT COUNT(*) as count FROM clozeSentences WHERE (blacklisted = 0 OR blacklisted IS NULL) AND language = ?'
+  ).get(language) as { count: number };
 
   return c.json({
     dbCount: count.count,
