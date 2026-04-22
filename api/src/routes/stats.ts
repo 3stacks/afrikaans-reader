@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { db, DailyStatsRow } from '../db';
+import { resolveLanguage } from '../lib/active-language';
 
 const app = new Hono();
 
@@ -76,10 +77,11 @@ app.put('/today', async (c) => {
 
 // GET /api/stats/fluency
 app.get('/fluency', (c) => {
+  const language = resolveLanguage(c.req.query('language'));
   // Count words by state from knownWords table
   const stateCounts = db.prepare(
-    'SELECT state, COUNT(*) as count FROM knownWords GROUP BY state'
-  ).all() as { state: string; count: number }[];
+    'SELECT state, COUNT(*) as count FROM knownWords WHERE language = ? GROUP BY state'
+  ).all(language) as { state: string; count: number }[];
 
   const countMap: Record<string, number> = {};
   for (const row of stateCounts) {
@@ -117,7 +119,7 @@ app.get('/fluency', (c) => {
             100
         );
 
-  // Weekly growth: words marked known in last 7 days vs previous 7 days
+  // Weekly growth: vocab words updated to 'known' in last 7 days vs previous 7 (per-language)
   const today = getTodayDate();
   const d7 = new Date();
   d7.setDate(d7.getDate() - 6);
@@ -132,12 +134,12 @@ app.get('/fluency', (c) => {
   const prevWeekEnd = d8.toISOString().split('T')[0];
 
   const thisWeekRow = db.prepare(
-    'SELECT COALESCE(SUM(wordsMarkedKnown), 0) as total FROM dailyStats WHERE date BETWEEN ? AND ?'
-  ).get(weekStart, today) as { total: number };
+    "SELECT COUNT(*) as total FROM vocab WHERE language = ? AND state = 'known' AND stateUpdatedAt BETWEEN ? AND ?"
+  ).get(language, weekStart, today + 'T23:59:59') as { total: number };
 
   const prevWeekRow = db.prepare(
-    'SELECT COALESCE(SUM(wordsMarkedKnown), 0) as total FROM dailyStats WHERE date BETWEEN ? AND ?'
-  ).get(prevWeekStart, prevWeekEnd) as { total: number };
+    "SELECT COUNT(*) as total FROM vocab WHERE language = ? AND state = 'known' AND stateUpdatedAt BETWEEN ? AND ?"
+  ).get(language, prevWeekStart, prevWeekEnd + 'T23:59:59') as { total: number };
 
   return c.json({
     totalKnownWords,

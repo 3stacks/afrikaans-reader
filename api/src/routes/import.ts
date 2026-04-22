@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db';
 import { parseEpub } from '../lib/epub-parser';
 import { randomUUID } from 'crypto';
+import { resolveLanguage } from '../lib/active-language';
 
 const app = new Hono();
 
@@ -20,25 +21,26 @@ app.post('/epub', async (c) => {
     const parsed = parseEpub(buffer);
     const collectionId = randomUUID();
     const now = new Date().toISOString();
+    const language = resolveLanguage();
 
     const insertCollection = db.prepare(`
-      INSERT INTO collections (id, title, author, coverUrl, createdAt, lastReadAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO collections (id, title, author, coverUrl, createdAt, lastReadAt, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertLesson = db.prepare(`
-      INSERT INTO lessons (id, collectionId, title, sortOrder, textContent, wordCount, createdAt, lastReadAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO lessons (id, collectionId, title, sortOrder, textContent, wordCount, createdAt, lastReadAt, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     db.transaction(() => {
-      insertCollection.run(collectionId, parsed.title, parsed.author, null, now, now);
+      insertCollection.run(collectionId, parsed.title, parsed.author, null, now, now, language);
 
       for (let i = 0; i < parsed.chapters.length; i++) {
         const chapter = parsed.chapters[i];
         insertLesson.run(
           randomUUID(), collectionId, chapter.title, i,
-          chapter.markdown, chapter.wordCount, now, now
+          chapter.markdown, chapter.wordCount, now, now, language
         );
       }
     })();

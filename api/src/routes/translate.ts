@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { getProvider } from '../lib/llm';
-
 import { db } from '../db';
+import { getActiveLanguageConfig } from '../lib/active-language';
+import { isValidLanguageCode } from '../lib/languages';
 
 function recordStudyPing() {
   const today = new Date().toISOString().split('T')[0];
@@ -21,7 +22,7 @@ const app = new Hono();
 // POST /api/translate
 app.post('/', async (c) => {
   try {
-    const { word, sentence, type = 'word' } = await c.req.json();
+    const { word, sentence, type = 'word', language: reqLang } = await c.req.json();
 
     if (!word) {
       return c.json({ error: 'Word is required' }, 400);
@@ -29,8 +30,13 @@ app.post('/', async (c) => {
 
     recordStudyPing();
 
+    const langConfig = reqLang && isValidLanguageCode(reqLang)
+      ? (await import('../lib/languages')).LANGUAGES[reqLang]
+      : getActiveLanguageConfig();
+    const langName = langConfig.name;
+
     if (type === 'phrase') {
-      const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans phrase, using the sentence context to determine the correct meaning.
+      const prompt = `You are a ${langName} to English translator. Translate the following ${langName} phrase, using the sentence context to determine the correct meaning.
 
 Phrase: "${word}"
 Sentence context: "${sentence || word}"
@@ -49,7 +55,7 @@ Include idiomaticMeaning only if the phrase is an idiom or has a meaning that di
 
       return c.json(JSON.parse(text));
     } else {
-      const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans word, using the sentence context to determine the correct meaning.
+      const prompt = `You are a ${langName} to English translator. Translate the following ${langName} word, using the sentence context to determine the correct meaning.
 
 Word: "${word}"
 Sentence context: "${sentence || word}"

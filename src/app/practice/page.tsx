@@ -25,7 +25,7 @@ import { translateWord } from '@/lib/claude';
 import { lookupWord } from '@/lib/dictionary';
 
 const ANKI_CLOZE_DECK_SETTING_KEY = 'lector-anki-cloze-deck';
-const DEFAULT_ANKI_CLOZE_DECK = 'Afrikaans::Cloze';
+const DEFAULT_ANKI_CLOZE_DECK = 'Lector::Cloze';
 
 // Strip trailing punctuation from a word, returning [cleanWord, punctuation]
 function splitTrailingPunctuation(word: string): [string, string] {

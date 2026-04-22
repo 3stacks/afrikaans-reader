@@ -106,7 +106,7 @@ export interface Settings {
 // Database Class
 // ============================================================================
 
-class AfrikaansLearningDB extends Dexie {
+class LectorDB extends Dexie {
   vocab!: EntityTable<VocabEntry, 'id'>;
   knownWords!: EntityTable<KnownWord, 'word'>;
   clozeSentences!: EntityTable<ClozeSentence, 'id'>;
@@ -114,7 +114,7 @@ class AfrikaansLearningDB extends Dexie {
   settings!: EntityTable<Settings, 'key'>;
 
   constructor() {
-    super('AfrikaansLearningDB');
+    super('LectorDB');
 
     this.version(2).stores({
       // Vocab: indexed by id, with indexes for lookups and filtering
@@ -139,7 +139,12 @@ class AfrikaansLearningDB extends Dexie {
 }
 
 // Create and export the database instance
-export const db = new AfrikaansLearningDB();
+export const db = new LectorDB();
+
+// Clean up orphaned legacy IndexedDB (renamed from AfrikaansLearningDB)
+if (typeof indexedDB !== 'undefined') {
+  indexedDB.deleteDatabase('AfrikaansLearningDB');
+}
 
 // ============================================================================
 // Helper Functions - Vocabulary

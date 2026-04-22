@@ -2,10 +2,11 @@ import { Hono } from 'hono';
 import { db } from '../db';
 import { countWords } from '../lib/html-to-markdown';
 import { randomUUID } from 'crypto';
+import { resolveLanguage } from '../lib/active-language';
 
 const app = new Hono();
 
-// GET /api/data
+// GET /api/data — exports ALL languages (full backup, not filtered by active language)
 app.get('/', (c) => {
   const collections = db.prepare('SELECT * FROM collections').all();
   const lessons = db.prepare('SELECT * FROM lessons').all();
@@ -24,6 +25,7 @@ app.get('/', (c) => {
 // POST /api/data
 app.post('/', async (c) => {
   const data = await c.req.json();
+  const language = resolveLanguage(data.language);
   const results = {
     collections: 0, lessons: 0, vocab: 0, knownWords: 0,
     clozeSentences: 0, dailyStats: 0, settings: 0,
@@ -31,26 +33,28 @@ app.post('/', async (c) => {
 
   if (data.collections?.length) {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO collections (id, title, author, coverUrl, createdAt, lastReadAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO collections (id, title, author, coverUrl, createdAt, lastReadAt, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     for (const col of data.collections) {
       stmt.run(col.id, col.title, col.author || 'Unknown', col.coverUrl || null,
-        col.createdAt || new Date().toISOString(), col.lastReadAt || new Date().toISOString());
+        col.createdAt || new Date().toISOString(), col.lastReadAt || new Date().toISOString(),
+        col.language || language);
       results.collections++;
     }
   }
 
   if (data.lessons?.length) {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO lessons (id, collectionId, title, sortOrder, textContent, progress_scrollPosition, progress_percentComplete, wordCount, createdAt, lastReadAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO lessons (id, collectionId, title, sortOrder, textContent, progress_scrollPosition, progress_percentComplete, wordCount, createdAt, lastReadAt, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const l of data.lessons) {
       stmt.run(l.id, l.collectionId || null, l.title, l.sortOrder || 0,
         l.textContent || '', l.progress_scrollPosition || 0, l.progress_percentComplete || 0,
         l.wordCount || countWords(l.textContent || ''),
-        l.createdAt || new Date().toISOString(), l.lastReadAt || new Date().toISOString());
+        l.createdAt || new Date().toISOString(), l.lastReadAt || new Date().toISOString(),
+        l.language || language);
       results.lessons++;
     }
   }
@@ -85,8 +89,8 @@ app.post('/', async (c) => {
 
   if (data.vocab?.length) {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, reviewCount, bookId, chapter, createdAt, pushedToAnki, ankiNoteId)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, reviewCount, bookId, chapter, createdAt, pushedToAnki, ankiNoteId, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const v of data.vocab) {
@@ -95,24 +99,24 @@ app.post('/', async (c) => {
         v.state || 'new', v.stateUpdatedAt || new Date().toISOString(),
         v.reviewCount || 0, v.bookId || null, v.chapter || null,
         v.createdAt || new Date().toISOString(), v.pushedToAnki ? 1 : 0,
-        v.ankiNoteId || null
+        v.ankiNoteId || null, v.language || language
       );
       results.vocab++;
     }
   }
 
   if (data.knownWords?.length) {
-    const stmt = db.prepare('INSERT OR REPLACE INTO knownWords (word, state) VALUES (?, ?)');
+    const stmt = db.prepare('INSERT OR REPLACE INTO knownWords (word, language, state) VALUES (?, ?, ?)');
     for (const w of data.knownWords) {
-      stmt.run(w.word, w.state);
+      stmt.run(w.word, w.language || language, w.state);
       results.knownWords++;
     }
   }
 
   if (data.clozeSentences?.length) {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, vocabEntryId, masteryLevel, nextReview, reviewCount, lastReviewed, timesCorrect, timesIncorrect)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO clozeSentences (id, sentence, clozeWord, clozeIndex, translation, source, collection, wordRank, tatoebaSentenceId, vocabEntryId, masteryLevel, nextReview, reviewCount, lastReviewed, timesCorrect, timesIncorrect, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const cs of data.clozeSentences) {
@@ -121,7 +125,8 @@ app.post('/', async (c) => {
         cs.source || 'tatoeba', cs.collection || 'random', cs.wordRank || null,
         cs.tatoebaSentenceId || null, cs.vocabEntryId || null, cs.masteryLevel || 0,
         cs.nextReview || new Date().toISOString(), cs.reviewCount || 0,
-        cs.lastReviewed || null, cs.timesCorrect || 0, cs.timesIncorrect || 0
+        cs.lastReviewed || null, cs.timesCorrect || 0, cs.timesIncorrect || 0,
+        cs.language || language
       );
       results.clozeSentences++;
     }

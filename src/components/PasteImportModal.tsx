@@ -149,7 +149,7 @@ export default function PasteImportModal({ isOpen, onClose, onSave }: PasteImpor
               value={content}
               onChange={(e) => setContent(e.target.value)}
               disabled={isSaving}
-              placeholder="Paste your Afrikaans text here..."
+              placeholder="Paste your text here..."
               rows={12}
               className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 disabled:opacity-50 resize-none text-sm leading-relaxed"
             />
