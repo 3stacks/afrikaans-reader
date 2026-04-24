@@ -22,6 +22,7 @@ import importRoutes from './routes/import';
 import journalCorrect from './routes/journal-correct';
 import llmStatus from './routes/llm-status';
 import tokens from './routes/tokens';
+import translateCompare from './routes/translate-compare';
 import { authMiddleware } from './lib/auth';
 
 const app = new Hono();
@@ -49,6 +50,7 @@ app.route('/api/import', importRoutes);
 app.route('/api/journal-correct', journalCorrect);
 app.route('/api/llm-status', llmStatus);
 app.route('/api/tokens', tokens);
+app.route('/api/translate-compare', translateCompare);
 
 // Capture unhandled errors to Sentry/GlitchTip
 app.onError((err, c) => {

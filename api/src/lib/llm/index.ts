@@ -60,6 +60,24 @@ export function getProvider(): LLMProvider {
   return cachedProvider;
 }
 
+/** Instantiate all 3 providers independently for parallel comparison */
+export function getAllProviders(): Record<string, LLMProvider> {
+  const apiKey = getSetting('anthropicApiKey') || undefined;
+  const oauthToken = getSetting('claudeOauthToken') || undefined;
+  const anthropicModel = process.env.ANTHROPIC_MODEL || undefined;
+
+  const apfelModel = getSetting('apfelModel') || process.env.APFEL_MODEL || undefined;
+  const apfelUrl = getSetting('apfelUrl') || process.env.APFEL_URL || undefined;
+
+  const ollamaModel = getSetting('ollamaModel') || process.env.OLLAMA_MODEL || undefined;
+
+  return {
+    claude: new AnthropicProvider({ apiKey, oauthToken, model: anthropicModel }),
+    apfel: new ApfelProvider(apfelUrl, apfelModel),
+    ollama: new OllamaProvider(undefined, ollamaModel),
+  };
+}
+
 /** Clear cached provider (e.g. when settings change) */
 export function resetProvider(): void {
   cachedProvider = null;

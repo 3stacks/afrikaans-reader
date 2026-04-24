@@ -121,6 +121,18 @@ function getDb(): Database {
       lastUsedAt TEXT,
       expiresAt TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS translation_evaluations (
+      id TEXT PRIMARY KEY,
+      inputSentence TEXT NOT NULL,
+      contextSentence TEXT,
+      apfelTranslation TEXT,
+      ollamaTranslation TEXT,
+      claudeTranslation TEXT,
+      selectedProvider TEXT NOT NULL CHECK (selectedProvider IN ('apfel', 'ollama', 'claude', 'manual')),
+      manualTranslation TEXT,
+      createdAt TEXT NOT NULL
+    );
   `);
 
   // Migrations for existing databases
@@ -375,4 +387,18 @@ export interface ApiTokenRow {
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string | null;
+}
+
+export type EvalProvider = 'apfel' | 'ollama' | 'claude' | 'manual';
+
+export interface TranslationEvaluationRow {
+  id: string;
+  inputSentence: string;
+  contextSentence: string | null;
+  apfelTranslation: string | null;
+  ollamaTranslation: string | null;
+  claudeTranslation: string | null;
+  selectedProvider: EvalProvider;
+  manualTranslation: string | null;
+  createdAt: string;
 }
