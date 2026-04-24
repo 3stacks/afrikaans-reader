@@ -1,0 +1,132 @@
+# VII. Koppeltekens — Hyphen Rules
+# Source: AWS 7.2, pages 26-27
+
+chapter: VII
+title: Koppeltekens
+description: |
+  Rules governing when compound words and other constructions require hyphens.
+  This is one of the most complex areas of Afrikaans orthography.
+
+rules:
+  - id: VII-1
+    description: Compounds with proper nouns retain the noun's capitalisation
+    rule: |
+      When a proper noun forms part of a compound, it keeps its capital letter
+      and is joined with a hyphen.
+    examples:
+      correct: [Afrika-kenner, Bybelstof, Kaaps-Hollands, Moeder-Kaap]
+    severity: must
+
+  - id: VII-2
+    description: Multi-word compounds retain hyphens between all parts
+    rule: |
+      Compound words of three or more parts, where at least one part is itself
+      a compound, use hyphens throughout.
+    examples:
+      correct:
+        - vrou-voël
+        - piet-tjou-tjou-roep
+        - pond-vir-pond-stelsel
+        - wag-'n-bietjie-boom
+    severity: must
+
+  - id: VII-3
+    description: Compounds joined by "en" are hyphenated
+    rule: |
+      Compound words whose parts are connected by "en" are written with hyphens
+      between all parts.
+    examples:
+      correct:
+        - bek-en-klouseer
+        - haak-en-steekbossie
+        - olie-en-asynstel
+        - wins-en-verliesrekening
+    exceptions:
+      - rule: |
+          The suspended hyphen pattern (e.g. "hout- en sinkhuise") means two
+          separate types (houthuise AND sinkhuise). Contrast with
+          "hout-en-sinkhuise" meaning houses built FROM BOTH wood and zinc.
+        examples:
+          two_types: "hout- en sinkhuise"
+          combined_material: "hout-en-sinkhuise"
+    severity: must
+
+  - id: VII-4
+    description: Title compounds with rank + role
+    rule: |
+      Compound titles where the first element is a rank and the second a role
+      are hyphenated.
+    examples:
+      correct:
+        - adjunk-minister
+        - assistent-direkteur
+        - generaal-majoor
+        - kommandant-generaal
+        - luitenant-kolonel
+    severity: must
+
+  - id: VII-5
+    description: Paired adjective compounds
+    rule: |
+      Linked adjective pairs describing a combined quality are hyphenated.
+    examples:
+      correct:
+        - Christelik-histories
+        - Christelik-nasionaal
+        - Rooms-Katoliek
+        - sosiaal-demokraties
+    severity: must
+
+  - id: VII-6
+    description: State-of-being expressions
+    rule: |
+      Fixed expressions denoting a state of being (gesteldheid) are hyphenated.
+    examples:
+      correct: [been-af, bek-af, hand-uit, raad-op]
+      usage: "'n bek-af houding, 'n raad-op man"
+    exceptions:
+      - rule: |
+          When such expressions indicate direction or time rather than a state,
+          they are written separately (no hyphen).
+        examples:
+          separate: [berg af, berg op, jaar in, jaar uit, pad langs, son op]
+    severity: must
+
+  - id: VII-7
+    description: Vowel collision in full words
+    rule: |
+      When joining full words would create an awkward cluster of vowels,
+      use a hyphen to separate them.
+    examples:
+      correct:
+        - see-eend (not seeeend)
+        - na-aap (not naaap)
+        - knie-effek
+    implication: |
+      When generating compounds, check if the join point creates three or
+      more consecutive vowel letters. If so, hyphenate.
+    severity: must
+
+  - id: VII-8
+    description: Plural of compound titles
+    rule: |
+      In compound titles where the last part specifies the first, only the
+      first part takes the plural suffix.
+    examples:
+      correct:
+        - adjudante-generaal
+        - goewerneurs-generaal
+        - prokureurs-generaal
+    severity: must
+
+  - id: VII-9
+    description: Plural of compound titles (last part specifies)
+    rule: |
+      In compound titles where each part could stand alone, only the last
+      part takes the plural suffix.
+    examples:
+      correct:
+        - koning-keisers
+        - luitenant-betaalmeesters
+        - sekretaris-penningmeesters
+    severity: must

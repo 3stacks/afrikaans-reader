@@ -1,0 +1,74 @@
+# XIII. Meervoudsvorme — Plural Formation Rules
+# Source: AWS 7.2, pages 35-36
+
+chapter: XIII
+title: Meervoudsvorme
+description: |
+  Rules for forming plurals in Afrikaans. The primary suffixes are -e and -s,
+  with various sub-rules for each.
+
+rules:
+  - id: XIII-1
+    description: Standard plural with -e
+    rule: |
+      Most Afrikaans nouns form their plural by adding -e.
+      If the noun ends in a single consonant after a short vowel,
+      double the consonant before adding -e.
+    examples:
+      simple: [dag → dae, been → bene, huis → huise]
+      with_doubling: [bed → bedde, kat → katte, man → manne, son → sonne]
+    severity: must
+
+  - id: XIII-2
+    description: Plural with -s
+    rule: |
+      Nouns ending in -el, -em, -en, -er, -aar, -ier, -eur, and
+      diminutives (-tjie, -jie, -pie) typically take -s.
+    examples:
+      correct:
+        - tafel → tafels
+        - bodem → bodems
+        - teken → tekens
+        - kamer → kamers
+        - bewonderaar → bewonderaars
+        - offisier → offisiere
+        - amptenaar → amptenaars (or amptenare)
+        - meisietjie → meisietjies
+    severity: must
+
+  - id: XIII-3
+    description: Foreign plural forms alongside Afrikaans forms
+    rule: |
+      Some words of foreign origin retain their original plural alongside
+      an Afrikaans plural.
+    examples:
+      dual_forms:
+        - singular: laboratorium
+          plurals: [laboratoria, laboratoriums]
+        - singular: museum
+          plurals: [musea, museums]
+        - singular: sentrum
+          plurals: [sentra, sentrums]
+        - singular: daktilus
+          plurals: [daktili, daktilusse]
+    implication: |
+      Both forms are acceptable. The Afrikaans -s/-usse form is more
+      colloquial; the classical form is more formal.
+    severity: should
+
+  - id: XIII-4
+    description: Compound noun plurals
+    rule: |
+      In compound nouns, only the last element takes the plural suffix.
+    examples:
+      correct:
+        - skooldae (school days)
+        - hoërskole (high schools)
+        - motorhuise (garages)
+    exceptions:
+      - rule: |
+          In compound titles where the last part specifies the first,
+          the FIRST part takes the plural (see VII-8).
+        examples:
+          correct: [adjudante-generaal, goewerneurs-generaal]
+    severity: must

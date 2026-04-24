@@ -21,6 +21,7 @@ const SCOPE_MAP: Record<string, { read: string; write: string }> = {
   import:          { read: 'collections:write', write: 'collections:write' },
   'journal-correct': { read: 'vocab:read',     write: 'vocab:read' },
   'llm-status':    { read: 'settings:read',    write: 'settings:write' },
+  'translate-compare': { read: 'vocab:read',  write: 'vocab:write' },
 };
 
 function getResourceFromPath(path: string): string | null {

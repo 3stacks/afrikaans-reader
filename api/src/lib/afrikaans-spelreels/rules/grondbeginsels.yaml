@@ -1,0 +1,82 @@
+# I. Grondbeginsels — Foundational Spelling Principles
+# Source: AWS 7.2, pages 15-16
+
+chapter: I
+title: Grondbeginsels
+description: |
+  The three foundational principles of Afrikaans spelling, maintained since 1931.
+
+rules:
+  - id: I-1
+    principle: Pronunciation basis
+    description: |
+      Afrikaans spelling takes the generally accepted pronunciation in
+      educated Afrikaans as its foundation.
+    implication: |
+      When in doubt about spelling, the spoken form in standard Afrikaans
+      takes precedence.
+
+  - id: I-2
+    principle: Dutch correspondence
+    description: |
+      Afrikaans spelling takes into account the spelling officially
+      recognised in the Netherlands.
+    implication: |
+      Where Afrikaans pronunciation does not clearly deviate from Dutch,
+      the Dutch spelling convention is followed. This primarily affects
+      the ei/y and f/v distinctions.
+
+  - id: I-3
+    principle: Uniformity (gelykvormigheid)
+    description: |
+      The principle of uniformity is maintained as far as possible.
+      A word stem retains its spelling across inflected forms, even when
+      pronunciation shifts.
+    examples:
+      - rule: "The stem 'hond' keeps its d even though word-final d sounds like t"
+        forms: [hond, honde, hondjie]
+      - rule: "The stem 'goud' keeps its d"
+        forms: [goud, goue, goudjie]
+    implication: |
+      When generating inflected forms, preserve the stem spelling.
+      Do not respell based on pronunciation of the uninflected form.
+
+  - id: I-4
+    principle: Dutch ei/y and f/v retention
+    description: |
+      Where Afrikaans pronunciation does not clearly deviate from Dutch,
+      the Dutch distinction between ei/y and f/v is preserved.
+    examples:
+      - pairs:
+          ei: [feit, lei, Mei, peil, reis, steil, wei]
+          y: [fyt, ly, my, pyl, rys, styl, wy]
+          f: [fat, fee, feil, fel, fier, fonds, fors, frank]
+          v: [vat, vee, veil, vel, vier, vonds, vors, vrank]
+
+  - id: I-5
+    principle: Afrikaans deviations from Dutch
+    description: |
+      Where Afrikaans pronunciation clearly deviates from Dutch,
+      the Afrikaans pronunciation governs spelling.
+    examples:
+      - mapping:
+          afrikaans: bruilof
+          dutch: bruiloft
+      - mapping:
+          afrikaans: doring
+          dutch: doorn
+      - mapping:
+          afrikaans: harsings
+          dutch: hersenen
+      - mapping:
+          afrikaans: hoof
+          dutch: hoofd
+      - mapping:
+          afrikaans: yster
+          dutch: ijzer
+      - mapping:
+          afrikaans: lewe
+          dutch: leven
+      - mapping:
+          afrikaans: nag
+          dutch: nacht

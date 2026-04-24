@@ -1,0 +1,56 @@
+name: Afrikaanse Woordelys en Spelreëls
+version: "7.2"
+authority: Suid-Afrikaanse Akademie vir Wetenskap en Kuns — Taalkommissie
+source: Internet Archive (archive.org/details/afrikaansewoorde07suid)
+purpose: |
+  Spelling and orthography rules for Afrikaans, encoded as machine-readable
+  assertions. Designed to be loaded as LLM context when translating English
+  to Afrikaans, to ensure correct spelling, hyphenation, compounding, and
+  inflection.
+
+chapters:
+  - id: I
+    title: Grondbeginsels
+    description: Foundational spelling principles
+  - id: II
+    title: Dubbelspellinge
+    description: Double spellings and variant forms
+  - id: III
+    title: Wisselvorme
+    description: Alternating forms in inflection
+  - id: V
+    title: Skeiding van woorddele
+    description: Word division and syllable breaks
+  - id: VI
+    title: Deeltekens
+    description: Diaeresis usage
+  - id: VII
+    title: Koppeltekens
+    description: Hyphen rules
+  - id: VIII
+    title: Afkappingstekens
+    description: Apostrophe rules
+  - id: IX
+    title: Kappies
+    description: Circumflex accent rules
+  - id: X
+    title: Aksenttekens
+    description: Accent mark rules
+  - id: XI
+    title: Klinkers en tweeklanke
+    description: Vowels and diphthongs
+  - id: XII
+    title: Medeklinkers
+    description: Consonants
+  - id: XIII
+    title: Meervoudsvorme
+    description: Plural formation
+  - id: XIV
+    title: Woorde van vreemde herkoms
+    description: Loan words and foreign-origin words
+  - id: XV
+    title: Hoofletters
+    description: Capitalisation rules
+  - id: XVI
+    title: Los of vas
+    description: Words written separately or joined

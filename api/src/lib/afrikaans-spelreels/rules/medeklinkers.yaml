@@ -1,0 +1,124 @@
+# XII. Medeklinkers — Consonant Rules
+# Source: AWS 7.2, pages 32-35
+
+chapter: XII
+title: Medeklinkers
+description: |
+  Rules for consonant spelling, including word-final devoicing,
+  inflected forms, and consonant doubling.
+
+rules:
+  - id: XII-1
+    description: No final d or t after f, g, s
+    rule: |
+      Word-final d or t is not written after f, g, or s.
+    examples:
+      correct: [bedroef, beleef, drif, hoof, bedug, benodig, besorg, bedees, bewus, gerus]
+      not: [bedroeft, benodigdt]
+    exceptions:
+      - rule: |
+          When d or t surfaces in inflected forms or derivations,
+          it IS written in those forms.
+        examples:
+          base_vs_inflected:
+            - base: bedroef
+              inflected: [bedroefde, bedroefdheid]
+            - base: hoof
+              inflected: [hoofde, hoofdelik]
+            - base: benodig
+              inflected: [benodigdheid]
+            - base: bewus
+              inflected: [bewuste, bewustelik]
+    severity: must
+
+  - id: XII-2
+    description: Inflection suffix -de after voiced consonants
+    rule: |
+      Words ending in b or d preceded by a short vowel take the
+      inflection suffix -de.
+    examples:
+      correct:
+        - geribde (from rib)
+        - geskubde (from skub)
+        - bekladde (from blad)
+        - ingebedde (from bed)
+    severity: must
+
+  - id: XII-3
+    description: Inflection suffix -te after voiceless consonants
+    rule: |
+      Words ending in k, p, or t take the inflection suffix -te.
+    examples:
+      correct:
+        - bedekte (from bedek)
+        - geykte (from yk)
+        - verlepte (from verlep)
+        - versuipte (from versuip)
+    after_short_vowel:
+      rule: Double the final consonant before -te
+      examples:
+        - geblekte (from blek)
+        - gestopte (from stop)
+    severity: must
+
+  - id: XII-4
+    description: The letter g pronunciation contexts
+    rule: |
+      The letter g has three distinct pronunciations depending on context.
+    contexts:
+      - position: "Between vowels or word-initially before a vowel"
+        sound: "Voiced velar fricative (like Dutch g)"
+        examples: [dag, gee, lag, mag, nog, oog, tog, weg]
+      - position: "After r"
+        sound: "Harder g"
+        examples: [berge, morge, sorge, terge]
+      - position: "Written gg between short stressed vowel and weak e"
+        sound: "Hard g"
+        examples: [brugge, egge, rugge, sogge, trogge]
+    severity: informational
+
+  - id: XII-5
+    description: Consonant doubling — general principle
+    rule: |
+      A single consonant after a short stressed vowel is doubled before
+      a suffix beginning with a vowel, to preserve the short vowel sound.
+    examples:
+      correct:
+        - bed → beddens
+        - kat → katte
+        - man → manne
+        - son → sonne
+    severity: must
+
+  - id: XII-6
+    description: Double nn in derivatives of words ending in -n
+    rule: |
+      Words derived from stems ending in -n that retain a connection
+      to the base word get double nn.
+    examples:
+      correct:
+        - kannibaal → kannibale (from kan)
+        - personeel → personneel
+    exceptions:
+      - rule: |
+          Derived words that no longer have a felt connection to the
+          -n base word get a single n.
+        examples:
+          - fraksioneer
+          - funksioneel
+          - impressionisme
+          - reaksionêr
+          - stasioneer
+    severity: must
+
+  - id: XII-7
+    description: Double ss rules
+    rule: |
+      Write ss in two specific contexts.
+    contexts:
+      - context: Superlative of adjectives ending in -s
+        examples: [boosste, dwaasste, fluksste, snaaksste]
+      - context: Compounds where first part ends in s and second begins with s
+        examples: [grassaad, missinjaal, toetssteen]
+        contrast: [gewetenstryd, lewenskets, meisieskool, regeringsaak]
+    severity: must
