@@ -1,0 +1,54 @@
+# VI. Deeltekens — Diaeresis Rules
+# Source: AWS 7.2, page 25
+
+chapter: VI
+title: Deeltekens
+description: |
+  Rules for the diaeresis (trema/deelteken: ¨) which indicates that
+  adjacent vowels are pronounced separately rather than as a diphthong.
+
+rules:
+  - id: VI-1
+    description: Diaeresis on second vowel of a split pair
+    rule: |
+      A diaeresis is placed on the second of two adjacent vowel letters
+      when they must be pronounced as separate syllables, in two cases:
+      (a) when one part is a full word, or
+      (b) when neither part is a full word.
+    examples:
+      full_word_part:
+        - bieër (beer — bi-er)
+        - ploeë (ploughs — plo-e)
+        - vlieër (flier — vli-er)
+      neither_full_word:
+        - beëdig (swear in)
+        - geleë (situated)
+        - hoër (higher)
+        - leër (army)
+        - spieël (mirror)
+        - vermoë (ability)
+    severity: must
+
+  - id: VI-2
+    description: Diaeresis preserved in derivatives
+    rule: |
+      A word spelled with a diaeresis retains it in all further
+      derivations, compounds, and inflected forms.
+    examples:
+      correct:
+        - bedrieëry (from bedrieë)
+        - beïnvloeding (from beïnvloed)
+        - geleëner (from geleë)
+        - koeëllaer (from koeël)
+        - vlieëry (from vlieë)
+        - weerspieël (from spieël)
+    severity: must
+
+  - id: VI-3
+    description: No diaeresis on native "ae" combinations
+    rule: |
+      The vowel combination "ae" in native Afrikaans words never takes
+      a diaeresis, whether pronounced as one or two syllables.
+    examples:
+      no_diaeresis: [behae, dae, hael, maer, plae, swael, swaer]
+    severity: must

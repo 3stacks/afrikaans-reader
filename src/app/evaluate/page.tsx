@@ -58,7 +58,8 @@ export default function EvaluatePage() {
 
   // Auto-evaluate state
   const [autoRunning, setAutoRunning] = useState(false);
-  const [autoBatchSize, setAutoBatchSize] = useState(20);
+  const [autoBatchSize, setAutoBatchSize] = useState(50);
+  const [autoStatus, setAutoStatus] = useState<{ total: number; evaluated: number; remaining: number } | null>(null);
   const [autoProgress, setAutoProgress] = useState<{ completed: number; total: number } | null>(null);
   const [autoResults, setAutoResults] = useState<Array<{
     sentence: string;
@@ -196,6 +197,18 @@ export default function EvaluatePage() {
     fetchRandomSentence();
   };
 
+  const fetchAutoStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/translate-compare?type=auto-status', { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setAutoStatus(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, [headers]);
+
   const startAutoEvaluate = async () => {
     setAutoRunning(true);
     setAutoResults([]);
@@ -258,6 +271,7 @@ export default function EvaluatePage() {
     } finally {
       setAutoRunning(false);
       autoAbortRef.current = null;
+      fetchAutoStatus();
     }
   };
 
@@ -528,7 +542,11 @@ export default function EvaluatePage() {
         {/* Auto-evaluate section */}
         <div className="border-t border-zinc-200 dark:border-zinc-800 pt-6">
           <button
-            onClick={() => setShowAuto(!showAuto)}
+            onClick={() => {
+              const next = !showAuto;
+              setShowAuto(next);
+              if (next) fetchAutoStatus();
+            }}
             className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300"
           >
             <svg
@@ -538,9 +556,11 @@ export default function EvaluatePage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
             Auto-evaluate with Claude
-            <span className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-              Claude judges Ollama's translations in batch
-            </span>
+            {autoStatus && (
+              <span className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
+                {autoStatus.evaluated}/{autoStatus.total} done, {autoStatus.remaining} remaining
+              </span>
+            )}
           </button>
 
           {showAuto && (
@@ -556,7 +576,7 @@ export default function EvaluatePage() {
                     disabled={autoRunning}
                     className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm"
                   >
-                    {[10, 20, 50, 100].map((n) => (
+                    {[50, 100, 200, 500].map((n) => (
                       <option key={n} value={n}>{n} sentences</option>
                     ))}
                   </select>

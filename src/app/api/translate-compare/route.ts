@@ -57,7 +57,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type');
 
-    const endpoint = type === 'random' ? 'random-sentence' : 'evaluations';
+    const endpoint = type === 'random' ? 'random-sentence'
+      : type === 'auto-status' ? 'auto-evaluate/status'
+      : 'evaluations';
     const params = new URLSearchParams();
     const format = searchParams.get('format');
     if (format) params.set('format', format);

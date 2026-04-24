@@ -5,6 +5,7 @@ import { AnthropicProvider } from '../lib/llm/anthropic';
 import { OllamaProvider } from '../lib/llm/ollama';
 import { db, TranslationEvaluationRow } from '../db';
 import { randomUUID } from 'crypto';
+import { getSpelreelsContext } from '../lib/spelreels';
 
 const app = new Hono();
 
@@ -34,18 +35,41 @@ app.post('/compare', async (c) => {
       return c.json({ error: 'Sentence is required' }, 400);
     }
 
-    const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans sentence into natural English.
+    const spelreels = getSpelreelsContext();
+
+    const jsonPrompt = `You are an Afrikaans to English translator with deep knowledge of Afrikaans orthography.
+
+Use the following official spelling rules to inform your understanding of the Afrikaans input:
+
+${spelreels}
+
+---
+
+Translate the following Afrikaans sentence into natural English.
 
 Sentence: "${sentence}"
 
 Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
 {"translation": "the natural English translation"}`;
 
+    const plainPrompt = `You are an Afrikaans to English translator. Translate the following Afrikaans phrase, using the sentence context to determine the correct meaning.
+
+Phrase: "${sentence}"
+Sentence context: "${sentence}"
+
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
+{"translation": "the natural English translation", "literalBreakdown": "word-by-word literal translation", "idiomaticMeaning": "explanation if this is an idiom or has special meaning"}
+
+Include literalBreakdown if the phrase is more than one word.
+Include idiomaticMeaning only if the phrase is an idiom or has a meaning that differs from the literal translation.`;
+
     const providers = getAllProviders();
     const providerEntries = Object.entries(providers);
 
     const results = await Promise.allSettled(
-      providerEntries.map(async ([, provider]) => {
+      providerEntries.map(async ([name, provider]) => {
+        // Apfel (Apple model) uses the same prompt as the reader's translate route
+        const prompt = name === 'apfel' ? plainPrompt : jsonPrompt;
         const text = await provider.complete({
           messages: [{ role: 'user', content: prompt }],
           maxTokens: 512,
@@ -169,21 +193,37 @@ app.get('/random-sentence', async (c) => {
   return c.json({ sentence: row.sentence, referenceTranslation: row.translation });
 });
 
+// GET /api/translate-compare/auto-evaluate/status
+app.get('/auto-evaluate/status', async (c) => {
+  const total = (db.prepare(
+    'SELECT COUNT(*) as count FROM clozeSentences WHERE (blacklisted = 0 OR blacklisted IS NULL)'
+  ).get() as { count: number }).count;
+
+  const evaluated = (db.prepare(
+    `SELECT COUNT(*) as count FROM clozeSentences cs
+     WHERE (cs.blacklisted = 0 OR cs.blacklisted IS NULL)
+       AND cs.sentence IN (SELECT inputSentence FROM translation_evaluations)`
+  ).get() as { count: number }).count;
+
+  return c.json({ total, evaluated, remaining: total - evaluated });
+});
+
 // POST /api/translate-compare/auto-evaluate
 // Claude evaluates Ollama's translations in batch, streaming progress via SSE
+// Processes all unevaluated sentences sequentially, resumable across runs
 app.post('/auto-evaluate', async (c) => {
-  const { batchSize = 10 } = await c.req.json();
-  const size = Math.min(Math.max(1, batchSize), 100);
+  const { batchSize = 50 } = await c.req.json();
+  const size = Math.min(Math.max(1, batchSize), 500);
 
-  // Get sentences not yet evaluated
+  // Get next batch of unevaluated sentences, ordered by wordRank (most common first)
   const sentences = db.prepare(`
-    SELECT cs.sentence, cs.translation AS referenceTranslation
+    SELECT cs.sentence, cs.translation AS referenceTranslation, cs.wordRank
     FROM clozeSentences cs
     WHERE (cs.blacklisted = 0 OR cs.blacklisted IS NULL)
       AND cs.sentence NOT IN (SELECT inputSentence FROM translation_evaluations)
-    ORDER BY RANDOM()
+    ORDER BY cs.wordRank ASC NULLS LAST, cs.sentence ASC
     LIMIT ?
-  `).all(size) as { sentence: string; referenceTranslation: string }[];
+  `).all(size) as { sentence: string; referenceTranslation: string; wordRank: number | null }[];
 
   if (sentences.length === 0) {
     return c.json({ error: 'No unevaluated sentences remaining' }, 404);
@@ -193,9 +233,18 @@ app.post('/auto-evaluate', async (c) => {
   const providers = getAllProviders();
   const ollama = providers.ollama;
   const claude = providers.claude;
+  const spelreels = getSpelreelsContext();
 
   const translatePrompt = (sentence: string) =>
-    `You are an Afrikaans to English translator. Translate the following Afrikaans sentence into natural English.
+    `You are an Afrikaans to English translator with deep knowledge of Afrikaans orthography.
+
+Use the following official spelling rules to inform your understanding of the Afrikaans input:
+
+${spelreels}
+
+---
+
+Translate the following Afrikaans sentence into natural English.
 
 Sentence: "${sentence}"
 
@@ -203,7 +252,13 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
 {"translation": "the natural English translation"}`;
 
   const judgePrompt = (sentence: string, ollamaTranslation: string, referenceTranslation: string) =>
-    `You are a translation quality judge for Afrikaans to English.
+    `You are a translation quality judge for Afrikaans to English, with expert knowledge of Afrikaans spelling and orthography.
+
+Use the following official Afrikaans spelling rules (AWS 7.2) to inform your evaluation:
+
+${spelreels}
+
+---
 
 Afrikaans sentence: "${sentence}"
 Reference translation: "${referenceTranslation}"
@@ -215,6 +270,12 @@ Score the translation 1-5:
 3 = understandable but awkward or partially wrong
 4 = good, minor issues only
 5 = excellent, matches or improves on the reference
+
+Pay special attention to whether the translator correctly understood:
+- Compound words (los of vas — separate vs joined)
+- Hyphenation rules (koppeltekens)
+- Plural forms (meervoudsvorme)
+- Diaeresis usage (deeltekens)
 
 If the score is below 4, provide a corrected translation.
 

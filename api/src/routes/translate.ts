@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getProvider } from '../lib/llm';
+import { getSpelreelsContext } from '../lib/spelreels';
 
 import { db } from '../db';
 
@@ -29,8 +30,18 @@ app.post('/', async (c) => {
 
     recordStudyPing();
 
+    const spelreels = getSpelreelsContext();
+
     if (type === 'phrase') {
-      const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans phrase, using the sentence context to determine the correct meaning.
+      const prompt = `You are an Afrikaans to English translator with deep knowledge of Afrikaans orthography.
+
+Use the following official spelling rules to inform your understanding of the Afrikaans input:
+
+${spelreels}
+
+---
+
+Translate the following Afrikaans phrase, using the sentence context to determine the correct meaning.
 
 Phrase: "${word}"
 Sentence context: "${sentence || word}"
@@ -49,7 +60,15 @@ Include idiomaticMeaning only if the phrase is an idiom or has a meaning that di
 
       return c.json(JSON.parse(text));
     } else {
-      const prompt = `You are an Afrikaans to English translator. Translate the following Afrikaans word, using the sentence context to determine the correct meaning.
+      const prompt = `You are an Afrikaans to English translator with deep knowledge of Afrikaans orthography.
+
+Use the following official spelling rules to inform your understanding of the Afrikaans input:
+
+${spelreels}
+
+---
+
+Translate the following Afrikaans word, using the sentence context to determine the correct meaning.
 
 Word: "${word}"
 Sentence context: "${sentence || word}"

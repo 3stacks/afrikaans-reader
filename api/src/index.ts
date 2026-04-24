@@ -69,4 +69,5 @@ console.log(`Lector API running on http://localhost:${port}`);
 export default {
   port,
   fetch: app.fetch,
+  idleTimeout: 120, // SSE streams for auto-evaluate need longer than the 10s default
 };

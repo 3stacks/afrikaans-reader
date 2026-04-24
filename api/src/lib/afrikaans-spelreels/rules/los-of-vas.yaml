@@ -1,0 +1,252 @@
+# XVI. Los of Vas — Words Written Separately or Joined
+# Source: AWS 7.2, pages 45-69
+# This is the largest and most complex chapter. These rules govern whether
+# multi-word expressions are written as one word, hyphenated, or separate.
+
+chapter: XVI
+title: Los of vas
+description: |
+  Rules for whether Afrikaans word combinations are written separately (los),
+  joined (vas), or hyphenated. This is the single most common source of
+  spelling errors in Afrikaans.
+
+  General principle: if a combination has lost its individual word stress and
+  functions as a single semantic unit, it is written as one word (vas).
+  If each part retains independent stress and meaning, write separately (los).
+
+rules:
+  # ── A. Mostly written separately (los) ──────────────────────
+
+  - id: XVI-A1
+    section: Nouns followed by nouns
+    description: General descriptions with noun + noun
+    rule: |
+      A noun followed by another noun as a loose descriptive phrase
+      is written separately.
+    examples:
+      separate:
+        - die berg Nebo
+        - die distrik Stellenbosch
+        - die dorp Senekal
+        - die stad Pretoria
+        - die woestyn Sinai
+    severity: must
+
+  - id: XVI-A2
+    section: Nouns with measurement/quantity
+    description: Measurement expressions
+    rule: |
+      Nouns expressing weight, quantity, measure, or currency followed by
+      another noun are written separately.
+    examples:
+      separate:
+        - "'n koppie tee"
+        - "'n pond botter"
+        - "'n uur lank"
+        - "'n myl ver"
+    severity: must
+
+  - id: XVI-A3
+    section: Adjective + noun (descriptive)
+    description: Attributive adjectives before nouns
+    rule: |
+      An adjective used attributively before a noun is written separately.
+    examples:
+      separate:
+        - "'n maer man"
+        - "'n siek man"
+        - hoë bome
+        - koue wind
+        - kwaai honde
+    severity: must
+
+  - id: XVI-A4
+    section: Numerals
+    description: Cardinal numbers with nouns
+    rule: |
+      Cardinal numbers before nouns are written separately.
+      The Taalkommissie considers it acceptable to write compound numerals
+      either separately or joined — neither is a spelling error.
+    examples:
+      separate:
+        - twee honderd
+        - drie duisend
+        - een en twintig
+      also_acceptable:
+        - tweehonderd
+        - drieduisend
+        - een-en-twintig
+    severity: should
+
+  - id: XVI-A5
+    section: Verb combinations
+    description: Adverb/adjective + verb (separate when literal)
+    rule: |
+      When an adverb or adjective precedes a verb and retains its literal
+      meaning, write separately.
+    examples:
+      separate:
+        - hard loop (run fast, on wet floor)
+        - mis skiet (shoot and miss)
+        - mooi praat (speak eloquently)
+        - raak skiet (shoot and hit)
+    severity: must
+
+  # ── B. Mostly written joined (vas) ──────────────────────────
+
+  - id: XVI-B1
+    section: Noun + noun compounds
+    description: True compound nouns
+    rule: |
+      When a noun + noun combination forms a true compound (single semantic
+      unit with unified stress), it is written as one word.
+    examples:
+      joined:
+        - boeksak
+        - dadelpit
+        - grasdak
+        - klaskamer
+        - sakboek
+    implication: |
+      Compound nouns where the first element modifies the second (like English
+      "bookshelf") are always written as one word in Afrikaans.
+    severity: must
+
+  - id: XVI-B2
+    section: Noun + verb compounds
+    description: Compound verbs with nouns
+    rule: |
+      When noun + verb combinations are used as nouns themselves, they are
+      often written as one word.
+    examples:
+      joined:
+        - motorry (driving a car)
+        - ryseet (rice planting)
+        - aalmoeskry (begging for alms)
+    severity: should
+
+  - id: XVI-B3
+    section: Adjective + noun compounds
+    description: Lexicalised adjective-noun compounds
+    rule: |
+      When an adjective + noun combination has become a fixed lexical unit
+      (no longer a free description), write as one word.
+    examples:
+      joined:
+        - grootpad (main road)
+        - kleinvee (small livestock)
+        - oubaas (old boss/master)
+        - rooibok (impala)
+        - witbrood (white bread)
+      contrast_with_separate:
+        - "'n groot pad" (a road that is big)
+        - "'n rooi bok" (a buck that is red)
+    implication: |
+      The test is whether the combination has a specialised meaning beyond
+      the sum of its parts. "witbrood" is a type of bread, not just any
+      bread that happens to be white.
+    severity: must
+
+  - id: XVI-B4
+    section: Adverb + verb compounds
+    description: Lexicalised adverb-verb compounds
+    rule: |
+      Many adverb + verb combinations are written as one word when they
+      form a single concept.
+    examples:
+      joined:
+        - agtervolg (pursue)
+        - omklém (embrace)
+        - onderstéun (support)
+        - onderwérp (subject)
+    note: |
+      The stress pattern often shifts in these compounds — the adverb
+      loses its independent stress.
+    severity: must
+
+  - id: XVI-B5
+    section: Preposition compounds
+    description: Prepositions fused into adverbs/conjunctions
+    rule: |
+      Many preposition + pronoun/noun combinations have fused into single
+      words.
+    examples:
+      joined:
+        - daardeur (through that)
+        - daarvan (of that)
+        - hierdeur (through this)
+        - hiervan (of this)
+        - waarom (why)
+        - waarin (in which)
+        - buitendien (besides)
+        - bowendien (moreover)
+        - indien (if)
+        - sedertdien (since then)
+    severity: must
+
+  - id: XVI-B6
+    section: Common joined adverbs
+    description: Fixed adverb compounds
+    rule: |
+      A large number of adverb + adverb or adverb + preposition
+      combinations are written as one word.
+    examples:
+      joined:
+        - agteraan (at the back)
+        - agteraf (in a remote place)
+        - agterna (afterwards)
+        - agteruit (backwards)
+        - binnekort (shortly)
+        - boonop (on top of that)
+        - buitendien (besides)
+        - daarbenewens (in addition)
+        - dadelik (immediately)
+        - deeglik (thoroughly)
+        - inmiddels (meanwhile)
+        - naby (near)
+        - vandag (today)
+        - vanaand (tonight)
+        - vanmôre (this morning)
+        - vorentoe (forward)
+    severity: must
+
+  # ── C. Context-dependent (los or vas) ───────────────────────
+
+  - id: XVI-C1
+    section: Direction vs state
+    description: Same words, different meaning = different spelling
+    rule: |
+      Some combinations are written separately when indicating literal
+      direction/time, but joined when they have become a fixed expression
+      or noun.
+    examples:
+      separate_direction:
+        - "berg af (down the mountain)"
+        - "berg op (up the mountain)"
+        - "pad langs (along the road)"
+        - "son op (as the sun comes up)"
+      joined_fixed:
+        - "bergaf (downhill, figuratively declining)"
+        - "bergop (uphill, figuratively improving)"
+        - "padlangs (along the way)"
+        - "sonop (sunrise)"
+    implication: |
+      When translating, determine whether the expression is literal
+      (spatial/temporal = separate) or figurative/lexicalised (= joined).
+    severity: must
+
+  - id: XVI-C2
+    section: Verb particle separation
+    description: Separable verb particles
+    rule: |
+      Many Afrikaans verbs have separable particles (similar to German).
+      The particle is written separately in main clauses but joined in
+      subordinate clauses and infinitives.
+    examples:
+      main_clause: "Hy kom môre terug (He comes back tomorrow)"
+      subordinate: "...dat hy môre terugkom (...that he comes back tomorrow)"
+      infinitive: "om terug te kom (to come back)"
+    implication: |
+      When generating Afrikaans sentences, check clause type to determine
+      whether to separate or join the verb particle.
+    severity: must
