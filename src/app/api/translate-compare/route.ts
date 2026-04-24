@@ -16,13 +16,26 @@ export async function POST(request: NextRequest) {
     const action = body.action;
     delete body.action;
 
-    const endpoint = action === 'evaluate' ? 'evaluate' : 'compare';
+    const endpoint = action === 'evaluate' ? 'evaluate'
+      : action === 'auto-evaluate' ? 'auto-evaluate'
+      : 'compare';
 
     const response = await fetch(`${API_URL}/api/translate-compare/${endpoint}`, {
       method: 'POST',
       headers: forwardHeaders(request),
       body: JSON.stringify(body),
     });
+
+    // Stream SSE responses through for auto-evaluate
+    if (action === 'auto-evaluate' && response.body) {
+      return new Response(response.body, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
 
     const data = await response.json();
     if (!response.ok) {

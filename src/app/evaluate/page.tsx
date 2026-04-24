@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 type Provider = 'apfel' | 'ollama' | 'claude';
 type SelectedProvider = Provider | 'manual';
@@ -55,6 +55,23 @@ export default function EvaluatePage() {
   const [history, setHistory] = useState<Evaluation[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-evaluate state
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoBatchSize, setAutoBatchSize] = useState(20);
+  const [autoProgress, setAutoProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [autoResults, setAutoResults] = useState<Array<{
+    sentence: string;
+    ollamaTranslation: string | null;
+    score: number;
+    correctedTranslation: string | null;
+    notes: string | null;
+    status: string;
+    error?: string;
+  }>>([]);
+  const [autoSummary, setAutoSummary] = useState<{ completed: number; improved: number; total: number } | null>(null);
+  const [showAuto, setShowAuto] = useState(false);
+  const autoAbortRef = useRef<AbortController | null>(null);
 
   const headers = useCallback((): Record<string, string> => {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -177,6 +194,75 @@ export default function EvaluatePage() {
     setSubmitted(false);
     setSentence('');
     fetchRandomSentence();
+  };
+
+  const startAutoEvaluate = async () => {
+    setAutoRunning(true);
+    setAutoResults([]);
+    setAutoSummary(null);
+    setAutoProgress(null);
+    setError(null);
+
+    const controller = new AbortController();
+    autoAbortRef.current = controller;
+
+    try {
+      const res = await fetch('/api/translate-compare', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ action: 'auto-evaluate', batchSize: autoBatchSize }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Auto-evaluate failed');
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response stream');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'progress') {
+              setAutoProgress({ completed: event.completed, total: event.total });
+              setAutoResults((prev) => [...prev, event]);
+            } else if (event.type === 'done') {
+              setAutoSummary(event);
+            }
+          } catch {
+            // Skip malformed SSE lines
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setError(err instanceof Error ? err.message : 'Auto-evaluate failed');
+      }
+    } finally {
+      setAutoRunning(false);
+      autoAbortRef.current = null;
+    }
+  };
+
+  const stopAutoEvaluate = () => {
+    autoAbortRef.current?.abort();
   };
 
   const loadHistory = async () => {
@@ -438,6 +524,138 @@ export default function EvaluatePage() {
             )}
           </div>
         )}
+
+        {/* Auto-evaluate section */}
+        <div className="border-t border-zinc-200 dark:border-zinc-800 pt-6">
+          <button
+            onClick={() => setShowAuto(!showAuto)}
+            className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300"
+          >
+            <svg
+              className={`w-4 h-4 transition-transform ${showAuto ? 'rotate-90' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            Auto-evaluate with Claude
+            <span className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
+              Claude judges Ollama's translations in batch
+            </span>
+          </button>
+
+          {showAuto && (
+            <div className="mt-4 space-y-4">
+              <div className="flex items-end gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                    Batch size
+                  </label>
+                  <select
+                    value={autoBatchSize}
+                    onChange={(e) => setAutoBatchSize(Number(e.target.value))}
+                    disabled={autoRunning}
+                    className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm"
+                  >
+                    {[10, 20, 50, 100].map((n) => (
+                      <option key={n} value={n}>{n} sentences</option>
+                    ))}
+                  </select>
+                </div>
+                {!autoRunning ? (
+                  <button
+                    onClick={startAutoEvaluate}
+                    className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium transition-colors"
+                  >
+                    Run auto-evaluation
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopAutoEvaluate}
+                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors"
+                  >
+                    Stop
+                  </button>
+                )}
+              </div>
+
+              {/* Progress bar */}
+              {autoProgress && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                    <span>{autoProgress.completed} / {autoProgress.total}</span>
+                    <span>{Math.round((autoProgress.completed / autoProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-sky-500 transition-all duration-300 rounded-full"
+                      style={{ width: `${(autoProgress.completed / autoProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Summary */}
+              {autoSummary && (
+                <div className="p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 text-sm">
+                  <p className="font-medium text-sky-700 dark:text-sky-300">
+                    Batch complete: {autoSummary.completed} evaluated, {autoSummary.improved} corrected by Claude
+                  </p>
+                  <p className="text-sky-600 dark:text-sky-400 mt-1">
+                    {autoSummary.completed - autoSummary.improved} sentences where Ollama was good (score 4+)
+                  </p>
+                </div>
+              )}
+
+              {/* Results feed */}
+              {autoResults.length > 0 && (
+                <div className="max-h-96 overflow-y-auto space-y-2">
+                  {autoResults.map((r, i) => (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-lg border text-sm ${
+                        r.status === 'error'
+                          ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'
+                          : r.score >= 4
+                            ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
+                            : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20'
+                      }`}
+                    >
+                      <p className="font-medium text-zinc-800 dark:text-zinc-200">{r.sentence}</p>
+                      {r.status === 'error' ? (
+                        <p className="text-red-600 dark:text-red-400 mt-1">{r.error}</p>
+                      ) : (
+                        <>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              r.score >= 4
+                                ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                                : r.score >= 3
+                                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                                  : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                            }`}>
+                              {r.score}/5
+                            </span>
+                            <span className="text-zinc-500 dark:text-zinc-400">
+                              Ollama: {r.ollamaTranslation || '(failed)'}
+                            </span>
+                          </div>
+                          {r.correctedTranslation && (
+                            <p className="mt-1 text-sky-700 dark:text-sky-300">
+                              Claude: {r.correctedTranslation}
+                            </p>
+                          )}
+                          {r.notes && (
+                            <p className="mt-0.5 text-zinc-400 dark:text-zinc-500 text-xs">{r.notes}</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* History panel */}
         {showHistory && (

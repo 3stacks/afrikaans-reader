@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { getAllProviders } from '../lib/llm';
+import { AnthropicProvider } from '../lib/llm/anthropic';
+import { OllamaProvider } from '../lib/llm/ollama';
 import { db, TranslationEvaluationRow } from '../db';
 import { randomUUID } from 'crypto';
 
@@ -164,6 +167,184 @@ app.get('/random-sentence', async (c) => {
   }
 
   return c.json({ sentence: row.sentence, referenceTranslation: row.translation });
+});
+
+// POST /api/translate-compare/auto-evaluate
+// Claude evaluates Ollama's translations in batch, streaming progress via SSE
+app.post('/auto-evaluate', async (c) => {
+  const { batchSize = 10 } = await c.req.json();
+  const size = Math.min(Math.max(1, batchSize), 100);
+
+  // Get sentences not yet evaluated
+  const sentences = db.prepare(`
+    SELECT cs.sentence, cs.translation AS referenceTranslation
+    FROM clozeSentences cs
+    WHERE (cs.blacklisted = 0 OR cs.blacklisted IS NULL)
+      AND cs.sentence NOT IN (SELECT inputSentence FROM translation_evaluations)
+    ORDER BY RANDOM()
+    LIMIT ?
+  `).all(size) as { sentence: string; referenceTranslation: string }[];
+
+  if (sentences.length === 0) {
+    return c.json({ error: 'No unevaluated sentences remaining' }, 404);
+  }
+
+  // Build providers
+  const providers = getAllProviders();
+  const ollama = providers.ollama;
+  const claude = providers.claude;
+
+  const translatePrompt = (sentence: string) =>
+    `You are an Afrikaans to English translator. Translate the following Afrikaans sentence into natural English.
+
+Sentence: "${sentence}"
+
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
+{"translation": "the natural English translation"}`;
+
+  const judgePrompt = (sentence: string, ollamaTranslation: string, referenceTranslation: string) =>
+    `You are a translation quality judge for Afrikaans to English.
+
+Afrikaans sentence: "${sentence}"
+Reference translation: "${referenceTranslation}"
+Translation to evaluate: "${ollamaTranslation}"
+
+Score the translation 1-5:
+1 = completely wrong
+2 = captures some meaning but significant errors
+3 = understandable but awkward or partially wrong
+4 = good, minor issues only
+5 = excellent, matches or improves on the reference
+
+If the score is below 4, provide a corrected translation.
+
+Respond with ONLY a JSON object (no markdown, no code blocks):
+{"score": 4, "correctedTranslation": null, "notes": "brief explanation"}
+
+If correction is needed:
+{"score": 2, "correctedTranslation": "the better translation", "notes": "brief explanation"}`;
+
+  return streamSSE(c, async (stream) => {
+    let completed = 0;
+    let improved = 0;
+
+    for (const { sentence, referenceTranslation } of sentences) {
+      try {
+        // Step 1: Ollama translates
+        let ollamaTranslation: string | null = null;
+        try {
+          const ollamaRaw = await ollama.complete({
+            messages: [{ role: 'user', content: translatePrompt(sentence) }],
+            maxTokens: 512,
+          });
+          try {
+            const parsed = JSON.parse(ollamaRaw);
+            ollamaTranslation = parsed.translation || ollamaRaw;
+          } catch {
+            ollamaTranslation = ollamaRaw;
+          }
+        } catch (err) {
+          ollamaTranslation = null;
+        }
+
+        // Step 2: Claude judges
+        const judgeRaw = await claude.complete({
+          messages: [{
+            role: 'user',
+            content: judgePrompt(sentence, ollamaTranslation || '(failed to translate)', referenceTranslation),
+          }],
+          maxTokens: 512,
+        });
+
+        let score = 0;
+        let correctedTranslation: string | null = null;
+        let claudeTranslation: string | null = null;
+        let notes: string | null = null;
+        try {
+          const judgeResult = JSON.parse(judgeRaw);
+          score = judgeResult.score;
+          correctedTranslation = judgeResult.correctedTranslation || null;
+          notes = judgeResult.notes || null;
+        } catch {
+          // If Claude didn't return valid JSON, skip
+          completed++;
+          await stream.writeSSE({
+            data: JSON.stringify({ type: 'progress', completed, total: sentences.length, sentence, status: 'error', error: 'Claude returned invalid JSON' }),
+          });
+          continue;
+        }
+
+        // Determine best translation and provider
+        let selectedProvider: string;
+        let manualTranslation: string | null = null;
+
+        if (score >= 4) {
+          // Ollama was good enough
+          selectedProvider = 'ollama';
+          claudeTranslation = correctedTranslation;
+        } else if (correctedTranslation) {
+          // Claude provided a correction — store as manual (Claude-generated)
+          selectedProvider = 'manual';
+          manualTranslation = correctedTranslation;
+          claudeTranslation = correctedTranslation;
+          improved++;
+        } else {
+          // Low score but no correction — use reference
+          selectedProvider = 'manual';
+          manualTranslation = referenceTranslation;
+          claudeTranslation = null;
+          improved++;
+        }
+
+        // Store evaluation
+        const id = randomUUID();
+        const now = new Date().toISOString();
+
+        db.prepare(`
+          INSERT INTO translation_evaluations
+            (id, inputSentence, contextSentence, apfelTranslation, ollamaTranslation, claudeTranslation, selectedProvider, manualTranslation, createdAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, sentence, referenceTranslation, null, ollamaTranslation, claudeTranslation, selectedProvider, manualTranslation, now);
+
+        completed++;
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'progress',
+            completed,
+            total: sentences.length,
+            sentence,
+            ollamaTranslation,
+            score,
+            correctedTranslation,
+            notes,
+            selectedProvider,
+            status: 'ok',
+          }),
+        });
+      } catch (err) {
+        completed++;
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'progress',
+            completed,
+            total: sentences.length,
+            sentence,
+            status: 'error',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          }),
+        });
+      }
+    }
+
+    await stream.writeSSE({
+      data: JSON.stringify({
+        type: 'done',
+        completed,
+        improved,
+        total: sentences.length,
+      }),
+    });
+  });
 });
 
 export default app;
