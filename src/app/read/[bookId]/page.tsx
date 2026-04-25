@@ -333,6 +333,7 @@ export default function ReadPage({
     wordPanelRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === 'escape') {
         e.preventDefault();
